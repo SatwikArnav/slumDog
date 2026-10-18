@@ -34,6 +34,10 @@ def prepare_environment(out):
                 mat = mat.original
                 points = [tuple(evaluated.matrix_world @ mesh.vertices[i].co) for i in face.vertices]
                 coords = [tuple(uv.data[i].uv) for i in face.loop_indices] if uv else [(0.,0.)]*len(points)
+                if mat.name == 'Dark shallow puddles':
+                    # Each source puddle is a triangle fan: vertex 0 is its centre.
+                    # Interpolate a radial edge mask, retaining the original outline.
+                    coords = [(1. if i == 0 else 0.,0.) for i in face.vertices]
                 normal_matrix = evaluated.matrix_world.to_3x3().inverted().transposed()
                 normals = [tuple((normal_matrix @ mesh.corner_normals[i].vector).normalized()) for i in face.loop_indices]
                 by_material[mat].append((points,coords,face.use_smooth,normals))

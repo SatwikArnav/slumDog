@@ -86,8 +86,17 @@ and linear lighting. Static geometry is batched by material to reduce draw calls
 Re-exporting requires Blender/Cycles CPU and takes longer than a plain GLB export.
 The GLBs include these textures; playing still does not require Blender.
 
-Lighting uses a simple directional shader; Blender's full lighting, reflections,
-normal/bump networks and volume fields are not reproduced. Smoke uses persistent, noise-textured
+Lighting uses a simple directional shader; Blender's full lighting, general
+material reflections, normal/bump networks and volume fields are not reproduced.
+Puddles have a separate water shader with a live, half-resolution planar reflection
+of the buildings and animated character. The mirrored camera clips away geometry
+below the water plane to avoid reflecting the ground or the water itself. Fresnel
+reflectivity, subtle animated ripple distortion, a sun highlight, shallow-water
+tint, and feathered edges replace the old opaque dark patches. The reflection
+buffer resizes with the window and adds one extra scene render per frame. Smoke
+particles are not included in the reflection pass.
+
+Smoke uses persistent, noise-textured
 billboards with transparent edges, upward drift, air drag, expansion, and gradual
 fading. Cigarette wisps follow the animated ember, and the exhale plume starts at
 the animated mouth during exhalation. Particles continue dissipating after the
@@ -106,7 +115,9 @@ Blender. Source asset licenses and credits remain as described in ../CREDITS.md.
 
 `--verify` needs a working display. It loads the actual models and action, moves
 the player, advances idle/walking/smoking/idle states, checks that animated vertices
-change, and writes seven screenshots under ignored `game/captures/`. It exits
+change, and writes nine screenshots plus the reflection buffer under ignored
+`game/captures/`. The last two captures inspect puddles from different angles and
+exercise reflection-buffer resizing. It exits
 successfully only after those checks pass. A software OpenGL test was run with
 `DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1` using a temporary Xorg dummy display.
 
@@ -114,3 +125,5 @@ The unit suite checks that shop and lane surfaces retain both UVs and image
 texture references, as well as actual leg/arm rotation tracks and loop closure in
 the exported GLB, distance-driven walk timing, collisions, smoke emission timing,
 particle drift/lifetime, texture edges, and attachment interpolation.
+Water checks verify the camera mirror plane and the actual exported puddle height
+and edge mask.

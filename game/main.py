@@ -8,6 +8,7 @@ import pyray as rl
 from raylib import ffi
 from state import Player
 from smoke import Smoke, texture_rgba, socket_at, world_socket
+from water import Water, HEIGHT
 
 HERE = Path(__file__).resolve().parent
 
@@ -22,10 +23,12 @@ uniform mat4 matNormal;
 out vec2 uv;
 out vec3 normal;
 out vec4 color;
+out vec3 worldPosition;
 void main() {
     uv = vertexTexCoord;
     normal = normalize(vec3(matNormal*vec4(vertexNormal, 0.0)));
     color = vertexColor;
+    worldPosition = vec3(matModel*vec4(vertexPosition,1.0));
     gl_Position = mvp*vec4(vertexPosition, 1.0);
 }
 '''
@@ -33,10 +36,14 @@ FRAGMENT = '''#version 330
 in vec2 uv;
 in vec3 normal;
 in vec4 color;
+in vec3 worldPosition;
+uniform int reflectionPass;
+uniform float waterHeight;
 uniform sampler2D texture0;
 uniform vec4 colDiffuse;
 out vec4 finalColor;
 void main() {
+    if (reflectionPass == 1 && worldPosition.y < waterHeight+0.001) discard;
     vec4 texel = texture(texture0, uv);
     vec4 base = vec4(pow(texel.rgb, vec3(2.2))*colDiffuse.rgb*color.rgb,
                      texel.a*colDiffuse.a*color.a);
@@ -93,6 +100,9 @@ def main():
                     rl.gen_texture_mipmaps(ffi.addressof(surface,'texture'))
                     rl.set_texture_filter(surface.texture,rl.TEXTURE_FILTER_TRILINEAR)
                 filtered.add(surface.texture.id)
+    water = Water(environment,HERE / 'assets/environment.glb')
+    reflection_location = rl.get_shader_location(shader,'reflectionPass')
+    rl.set_shader_value(shader,rl.get_shader_location(shader,'waterHeight'),ffi.new('float *',HEIGHT),rl.SHADER_UNIFORM_FLOAT)
     yaw, pitch, distance = math.pi, .18, 2.7
     captured = not args.verify
     if captured:
@@ -122,6 +132,8 @@ def main():
                 player.smoke_time = player.duration - .01
                 player.step(.02, 0, 0, yaw, False, config['collision'])
                 assert player.smoke_time is None
+            elif stage == 8:
+                rl.set_window_size(960,640)
         else:
             if rl.is_key_pressed(rl.KEY_TAB):
                 captured = not captured
@@ -169,12 +181,25 @@ def main():
         camera.target = target
         camera.position = rl.Vector3(target.x+direction.x*safe, target.y+direction.y*safe,
                                      target.z+direction.z*safe)
+        if args.verify and stage >= 7:
+            camera.position = rl.Vector3(1.2 if stage == 7 else .15,.68,1.0)
+            camera.target = rl.Vector3(.665,HEIGHT,-.307)
+        # Mirror only surfaces above the puddle plane; the ground must not hide
+        # the reflected buildings, and water must not reflect itself recursively.
+        rl.set_shader_value(shader,reflection_location,ffi.new('int *',1),rl.SHADER_UNIFORM_INT)
+        water.begin_reflection(camera)
+        water.draw_environment()
+        rl.draw_model_ex(character,rl.Vector3(player.x,0,player.z),rl.Vector3(0,1,0),
+                         math.degrees(player.yaw),rl.Vector3(1,1,1),rl.WHITE)
+        water.end_reflection()
+        rl.set_shader_value(shader,reflection_location,ffi.new('int *',0),rl.SHADER_UNIFORM_INT)
         rl.begin_drawing()
         rl.clear_background(rl.Color(179, 199, 208, 255))
         rl.begin_mode_3d(camera)
-        rl.draw_model(environment, rl.Vector3(0, 0, 0), 1., rl.WHITE)
+        water.draw_environment()
         rl.draw_model_ex(character, rl.Vector3(player.x, 0, player.z), rl.Vector3(0, 1, 0),
                          math.degrees(player.yaw), rl.Vector3(1, 1, 1), rl.WHITE)
+        water.draw(camera,rl.get_time())
         # Depth-test against the street, but do not let transparent puffs occlude
         # each other. Back-to-front sorting gives stable alpha compositing.
         rl.rl_draw_render_batch_active()
@@ -209,20 +234,27 @@ def main():
             assert rl.export_image(image, str(path)), 'Capture export failed'
             rl.unload_image(image)
             assert path.is_file()
+            if stage == 7:
+                reflected_image = rl.load_image_from_texture(water.target.texture)
+                assert rl.export_image(reflected_image,str(captures/'reflection.png'))
+                rl.unload_image(reflected_image)
+            if stage == 8:
+                assert water.size == (rl.get_screen_width()//2,rl.get_screen_height()//2)
             # Animation must deform mesh geometry, not just advance a state label.
             mesh = character.meshes[0]
             if mesh.animVertices != ffi.NULL:
                 signatures.append(tuple(round(mesh.animVertices[i], 5) for i in range(min(mesh.vertexCount*3, 900))))
             stage += 1
-            if stage == 7:
+            if stage == 9:
                 assert len(set(signatures)) > 1, 'Character vertices did not animate'
                 assert signatures[1] != signatures[2], 'Walk poses did not change'
                 assert signatures[3] != signatures[0], 'Smoking pose did not change'
-                print('GAME_VERIFY_OK: moved, walk poses changed, smoke -> idle, seven captures', flush=True)
+                print('GAME_VERIFY_OK: walk, smoke -> idle, puddle reflection and resize, nine captures', flush=True)
                 break
     rl.unload_model_animations(animations, count[0])
     rl.unload_model_animations(walks, walk_count[0])
     rl.unload_texture(smoke_texture)
+    water.close()
     rl.unload_model(character)
     rl.unload_model(environment)
     rl.unload_shader(shader)
