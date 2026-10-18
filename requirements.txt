@@ -1,0 +1,2 @@
+# Only needed to regenerate the prebuilt signage textures.
+Pillow>=10.0

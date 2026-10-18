@@ -1,0 +1,12 @@
+# Blender autosaves and render scratch
+*.blend[0-9]
+*.blend[0-9][0-9]
+*.blend@
+**/frames/
+**/renders/
+**/__pycache__/
+*.py[cod]
+*.log
+.DS_Store
+Thumbs.db
+.venv/

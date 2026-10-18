@@ -1,0 +1,35 @@
+# Asset and reference credits
+
+## MakeHuman — CC0 graphical assets
+
+The human topology, morph targets, skeleton definition, skin weights, skin and eye textures, clothing, shoes, hair, and eyebrows come from MakeHuman community graphical assets. Upstream source headers are retained in `character/assets/`. The rig adaptation, controls, smoking action, cigarette, procedural smoke, stubble, scar, lighting, and scene assembly were created for this project.
+
+- https://github.com/makehumancommunity/makehuman
+- https://github.com/makehumancommunity/makehuman/blob/master/LICENSE.md
+- https://github.com/s20220526/makehuman-assets — bundled-asset mirror
+
+Upstream headers credit Data Collection AB, Joel Palmius, Jonas Hauquier, and the MakeHuman contributors.
+
+## Poly Haven — CC0
+
+- Concrete Wall 003 — Dimitrios Savva and Rico Cilliers: https://polyhaven.com/a/concrete_wall_003
+- Corrugated Iron 02 — Sergej Majboroda and Jenelle van Heerden: https://polyhaven.com/a/corrugated_iron_02
+- Plastic Monobloc Chair 01 — Kuutti Siitonen: https://polyhaven.com/a/plastic_monobloc_chair_01
+- Barrel 02 — Jorge Camacho: https://polyhaven.com/a/Barrel_02
+- License: https://polyhaven.com/license
+
+Materials and props are used in the editable environment scene; local geometry, signage, dressing, camera work, and scene layout were created for the project.
+
+## Font — SIL Open Font License
+
+Noto Sans Devanagari is used for authored local signage. Its license is included at `environment/assets/OFL.txt`.
+
+- https://github.com/google/fonts/tree/main/ofl/notosansdevanagari
+
+## Visual research
+
+- URBZ, Sangam Gully / Homegrown Street: https://www.urbz.net/homegrown
+- URBZ, Bareilly Compound / The Story of a Lane in Dharavi: https://www.urbz.net/articles/story-lane-dharavi
+- Kumbharwada documentation and Wikimedia street photographs, linked in `environment/README.md`
+
+Reference photographs informed the scene and are not bundled as texture assets. Shanti Nagar is fictional.
