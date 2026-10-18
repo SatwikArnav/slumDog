@@ -33,7 +33,7 @@ def main():
     if not marker.is_file() or marker.read_text() != expected:
         run([python, '-m', 'pip', 'install', '-r', requirements])
         marker.write_text(expected)
-    missing = [name for name in ('environment.glb', 'character.glb', 'scene.json')
+    missing = [name for name in ('environment.glb', 'character.glb', 'walk.glb', 'scene.json')
                if not (HERE / 'assets' / name).is_file()]
     if missing:
         blender = shutil.which('blender')

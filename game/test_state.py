@@ -1,6 +1,6 @@
 import math
 import unittest
-from state import Player
+from state import Player, WALK_SPEED, STRIDE_LENGTH
 
 
 class Controls(unittest.TestCase):
@@ -9,11 +9,24 @@ class Controls(unittest.TestCase):
                                                        (0, 1, 1, 0), (0, -1, -1, 0)]:
             p = Player(x=0, z=0)
             p.step(.05, forward, side, math.pi, False, [])
-            self.assertAlmostEqual(p.x, expected_x*.115)
-            self.assertAlmostEqual(p.z, expected_z*.115)
+            self.assertAlmostEqual(p.x, expected_x*WALK_SPEED*.05)
+            self.assertAlmostEqual(p.z, expected_z*WALK_SPEED*.05)
         p = Player(x=0, z=0)
         p.step(.05, 1, 1, math.pi, False, [])
-        self.assertAlmostEqual(math.hypot(p.x, p.z), .115)
+        self.assertAlmostEqual(math.hypot(p.x, p.z), WALK_SPEED*.05)
+
+    def test_walk_tracks_distance_and_stops_at_wall(self):
+        p = Player(x=0, z=0)
+        p.step(.05, 1, 0, 0, False, [])
+        self.assertAlmostEqual(p.walk_phase, WALK_SPEED*.05/STRIDE_LENGTH)
+        self.assertGreater(p.walk_weight, 0)
+        for _ in range(80):
+            p.step(.05, 1, 0, 0, False, [[-.5, 1, .5, 2]])
+        stopped = p.walk_phase
+        for _ in range(20):
+            p.step(.05, 1, 0, 0, False, [[-.5, 1, .5, 2]])
+        self.assertEqual(p.walk_phase, stopped)
+        self.assertLess(p.walk_weight, .001)
 
     def test_smoke_returns_to_idle_and_can_repeat(self):
         p = Player()

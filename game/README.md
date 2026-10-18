@@ -62,20 +62,27 @@ virtual display for automated checks, not for interactive play.
 | Escape | Exit |
 
 Movement pauses while smoking. Additional E presses during the action are ignored.
-The supplied source contains no walking clip; movement translates the idle model.
+Walking uses a generated skeletal IK cycle with alternating planted steps, foot
+lift, pelvis motion, and opposing arm swings. Playback follows actual distance
+travelled; pushing against a wall fades back to idle. Turning and animation
+transitions are smoothed. This is a procedural authored walk, not motion capture.
 Building collision uses the Blender scene's `COL_` volumes. Small props, roofs,
 stairs, and interiors are not a complete collision/navigation system. Camera rays
 shorten the follow distance when a wall is behind the player.
 
 ## Real-time conversion
 
-The exporter writes `game/assets/environment.glb`, `character.glb`, and
+The exporter writes `game/assets/environment.glb`, `character.glb`, `walk.glb`, and
 `scene.json`. Rerun it after changing source Blender scenes. The character retains
 its sampled skeletal action and cigarette attachment. Fine beard geometry and
 subdivision are omitted for performance. Procedural materials are reduced to
 diffuse textures/colours with simple directional lighting. Exhaled smoke uses
 lightweight raylib particles. Blender's volume fields, baked lighting, and full
-material networks are not reproduced. The two metallic textures missing in the
+material networks are not reproduced. Smoke uses persistent, noise-textured
+billboards with transparent edges, upward drift, air drag, expansion, and gradual
+fading. Cigarette wisps follow the animated ember, and the exhale plume starts at
+the animated mouth during exhalation. Particles continue dissipating after the
+action ends; they are not a volumetric fluid simulation. The two metallic textures missing in the
 original environment are not needed by the diffuse renderer.
 
 Exported assets are included in the game branch so local play does not require
@@ -89,7 +96,11 @@ Blender. Source asset licenses and credits remain as described in ../CREDITS.md.
 ```
 
 `--verify` needs a working display. It loads the actual models and action, moves
-the player, advances idle/smoking/idle states, checks that animated vertices
-change, and writes five screenshots under ignored `game/captures/`. It exits
+the player, advances idle/walking/smoking/idle states, checks that animated vertices
+change, and writes seven screenshots under ignored `game/captures/`. It exits
 successfully only after those checks pass. A software OpenGL test was run with
 `DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1` using a temporary Xorg dummy display.
+
+The unit suite also checks actual leg/arm rotation tracks and loop closure in
+the exported GLB, distance-driven walk timing, collisions, smoke emission timing,
+particle drift/lifetime, texture edges, and attachment interpolation.

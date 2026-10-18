@@ -7,6 +7,7 @@ from pathlib import Path
 import pyray as rl
 from raylib import ffi
 from state import Player
+from smoke import Smoke, texture_rgba, socket_at, world_socket
 
 HERE = Path(__file__).resolve().parent
 
@@ -48,7 +49,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--verify', action='store_true', help='Run scripted movement/smoke checks and capture frames')
     args = parser.parse_args()
-    for name in ('environment.glb', 'character.glb', 'scene.json'):
+    for name in ('environment.glb', 'character.glb', 'walk.glb', 'scene.json'):
         if not (HERE / 'assets' / name).is_file():
             parser.error('Missing exported assets. Run blender -b --python game/export_assets.py first.')
     config = json.loads((HERE / 'assets' / 'scene.json').read_text())
@@ -67,6 +68,16 @@ def main():
     animation = animations[0]
     if not rl.is_model_animation_valid(character, animation):
         raise RuntimeError('Animation skeleton does not match character')
+    walk_count = ffi.new('int *')
+    walks = rl.load_model_animations(str(HERE / 'assets/walk.glb'), walk_count)
+    if not walk_count[0] or not rl.is_model_animation_valid(character, walks[0]):
+        raise RuntimeError('Walking animation missing or skeleton mismatch')
+    walk = walks[0]
+    smoke = Smoke()
+    pixels = ffi.new('unsigned char[]', bytes(texture_rgba()))
+    smoke_texture = rl.load_texture_from_image(rl.Image(pixels, 128, 128, 1,
+                                                       rl.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8))
+    rl.set_texture_filter(smoke_texture, rl.TEXTURE_FILTER_BILINEAR)
     print('LOADED', environment.meshCount, 'environment meshes;', character.meshCount,
           'character meshes;', animation.keyframeCount, 'animation keyframes', flush=True)
     shader = rl.load_shader_from_memory(VERTEX, FRAGMENT)
@@ -89,11 +100,16 @@ def main():
                     player.step(.05, 1, 0, yaw, False, config['collision'])
                 assert math.hypot(player.x-initial[0], player.z-initial[1]) > 1
             elif stage == 2:
+                player.walk_phase = (player.walk_phase+.5) % 1
+            elif stage == 3:
                 player.step(.01, 0, 0, yaw, True, config['collision'])
                 player.smoke_time = 3.2
-            elif stage == 3:
-                player.smoke_time = 6.0
+                player.walk_weight = 0
             elif stage == 4:
+                player.smoke_time = 5.7
+            elif stage == 5:
+                player.smoke_time = 7.0
+            elif stage == 6:
                 player.smoke_time = player.duration - .01
                 player.step(.02, 0, 0, yaw, False, config['collision'])
                 assert player.smoke_time is None
@@ -115,11 +131,24 @@ def main():
 
         # raylib samples glTF animations at 60 keyframes/sec, independently of Blender FPS.
         fraction = 0 if player.smoke_time is None else min(player.smoke_time/player.duration, .9999)
-        rl.update_model_animation(character, animation, fraction*(animation.keyframeCount-1))
+        rl.update_model_animation_ex(character, animation, fraction*(animation.keyframeCount-1),
+                                     walk, player.walk_phase*(walk.keyframeCount-1), player.walk_weight)
+        idle_sockets = socket_at(config['smoke_sockets'], fraction)
+        walk_sockets = socket_at(config['walk_sockets'], player.walk_phase)
+        anchors = [world_socket([a*(1-player.walk_weight)+b*player.walk_weight
+                                  for a,b in zip(idle, moving)], player.x, player.z, player.yaw)
+                   for idle,moving in zip(idle_sockets,walk_sockets)]
+        if args.verify and stage in (4,5):
+            for i in range(24):
+                smoke.update(.05, *anchors, player.yaw,
+                             4.9+i*.05 if stage == 4 else 7.0)
+        else:
+            smoke.update(dt, *anchors, player.yaw, player.smoke_time)
         # Follow camera with a ray against the environment to avoid crossing walls.
         target = rl.Vector3(player.x, 1.35, player.z)
-        offset = rl.Vector3(-math.sin(yaw)*math.cos(pitch)*distance,
-                            .45+math.sin(pitch)*distance, -math.cos(yaw)*math.cos(pitch)*distance)
+        view_yaw = player.yaw+1.15 if args.verify and stage >= 1 else yaw
+        offset = rl.Vector3(-math.sin(view_yaw)*math.cos(pitch)*distance,
+                            .45+math.sin(pitch)*distance, -math.cos(view_yaw)*math.cos(pitch)*distance)
         length = math.sqrt(offset.x**2+offset.y**2+offset.z**2)
         direction = rl.Vector3(offset.x/length, offset.y/length, offset.z/length)
         safe = length
@@ -137,23 +166,28 @@ def main():
         rl.draw_model(environment, rl.Vector3(0, 0, 0), 1., rl.WHITE)
         rl.draw_model_ex(character, rl.Vector3(player.x, 0, player.z), rl.Vector3(0, 1, 0),
                          math.degrees(player.yaw), rl.Vector3(1, 1, 1), rl.WHITE)
-        # Lightweight real-time exhale; Blender volume shaders cannot run in raylib.
-        if player.smoke_time is not None and 4.9 < player.smoke_time < 8.5:
-            t = player.smoke_time - 4.9
-            for i in range(12):
-                age = (t-i*.09) % 1.3
-                if t < i*.09:
-                    continue
-                forward = .15 + age*.35
-                pos = rl.Vector3(player.x+math.sin(player.yaw)*forward,
-                                 1.65+age*.16, player.z+math.cos(player.yaw)*forward)
-                rl.draw_sphere(pos, .015+age*.045, rl.Color(207, 211, 209, int(100*(1-age/1.3))))
+        # Depth-test against the street, but do not let transparent puffs occlude
+        # each other. Back-to-front sorting gives stable alpha compositing.
+        rl.rl_draw_render_batch_active()
+        rl.rl_disable_depth_mask()
+        particles = sorted(smoke.particles, key=lambda p: (
+            (p.x-camera.position.x)**2+(p.y-camera.position.y)**2+(p.z-camera.position.z)**2), reverse=True)
+        for puff in particles:
+            radius = puff.radius
+            rl.draw_billboard_pro(camera, smoke_texture, rl.Rectangle(0,0,128,128),
+                                  rl.Vector3(puff.x,puff.y,puff.z), rl.Vector3(0,1,0),
+                                  rl.Vector2(radius*2,radius*2), rl.Vector2(radius,radius),
+                                  puff.rotation, rl.Color(240,244,248,int(puff.alpha)))
+        rl.rl_draw_render_batch_active()
+        rl.rl_enable_depth_mask()
         rl.end_mode_3d()
         rl.draw_rectangle(0, 0, rl.get_screen_width(), 79, rl.Color(18, 24, 24, 225))
         rl.draw_text('SHANTI NAGAR', 20, 13, 24, rl.RAYWHITE)
         rl.draw_text('WASD move   Mouse look   E smoke   Wheel zoom   Tab release mouse   R reset   Esc exit',
                      20, 47, 17, rl.LIGHTGRAY)
-        status = 'IDLE  |  Press E to smoke' if player.smoke_time is None else 'SMOKING  |  Returns to idle when finished'
+        status = ('WALKING' if player.walk_weight > .1 else 'IDLE')+'  |  Press E to smoke'
+        if player.smoke_time is not None:
+            status = 'SMOKING  |  Returns to idle when finished'
         rl.draw_rectangle(12, rl.get_screen_height()-46, 490, 34, rl.Color(18, 24, 24, 225))
         rl.draw_text(status, 23, rl.get_screen_height()-37, 18, rl.RAYWHITE)
         rl.draw_fps(rl.get_screen_width()-95, 15)
@@ -171,11 +205,15 @@ def main():
             if mesh.animVertices != ffi.NULL:
                 signatures.append(tuple(round(mesh.animVertices[i], 5) for i in range(min(mesh.vertexCount*3, 900))))
             stage += 1
-            if stage == 5:
+            if stage == 7:
                 assert len(set(signatures)) > 1, 'Character vertices did not animate'
-                print('GAME_VERIFY_OK: moved, idle -> smoke -> idle, animated vertices changed, five captures', flush=True)
+                assert signatures[1] != signatures[2], 'Walk poses did not change'
+                assert signatures[3] != signatures[0], 'Smoking pose did not change'
+                print('GAME_VERIFY_OK: moved, walk poses changed, smoke -> idle, seven captures', flush=True)
                 break
     rl.unload_model_animations(animations, count[0])
+    rl.unload_model_animations(walks, walk_count[0])
+    rl.unload_texture(smoke_texture)
     rl.unload_model(character)
     rl.unload_model(environment)
     rl.unload_shader(shader)

@@ -1,8 +1,11 @@
 """Run with: blender -b --python game/export_assets.py (does not save .blend files)."""
 import json
 import math
+import sys
 from pathlib import Path
 import bpy
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from build_walk import make_walk, sockets
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'game' / 'assets'
@@ -37,7 +40,8 @@ def export(name, animated=False):
     simplify_materials()
     bpy.ops.export_scene.gltf(
         filepath=str(OUT / name), export_format='GLB', export_yup=True,
-        export_animations=animated, export_animation_mode='ACTIVE_ACTIONS',
+        export_animations=animated, export_animation_mode='SCENE',
+        export_anim_scene_split_object=False,
         export_force_sampling=True, export_bake_animation=True,
         export_morph=False, export_cameras=False, export_lights=False,
         export_apply=not animated, export_frame_range=True,
@@ -64,8 +68,8 @@ for obj in list(scene.objects):
         obj.select_set(True)
         bpy.ops.object.convert(target='MESH')
 export('environment.glb')
-(OUT / 'scene.json').write_text(json.dumps({'collision': collision, 'spawn': [-.7, 0, 3.2],
-                                         'smoking_seconds': 215 / 24}, indent=2))
+metadata = {'collision': collision, 'spawn': [-.7, 0, 3.2],
+            'smoking_seconds': 215 / 24, 'stride_length': 1.2}
 
 bpy.ops.wm.open_mainfile(filepath=str(ROOT / 'character' / 'Rook_Rebuilt.blend'))
 scene = bpy.context.scene
@@ -78,5 +82,11 @@ for obj in list(scene.objects):
     for mod in list(obj.modifiers):
         if mod.type == 'SUBSURF':
             obj.modifiers.remove(mod)
+rig = next(o for o in scene.objects if o.type == 'ARMATURE')
+metadata['smoke_sockets'] = sockets(rig)
 export('character.glb', animated=True)
+make_walk(rig)
+metadata['walk_sockets'] = sockets(rig)
+export('walk.glb', animated=True)
+(OUT / 'scene.json').write_text(json.dumps(metadata, separators=(',', ':')))
 print('GAME_ASSETS_EXPORTED', OUT, flush=True)
