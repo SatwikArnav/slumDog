@@ -6,6 +6,23 @@ import unittest
 
 
 class ExportChecks(unittest.TestCase):
+    def test_shop_surfaces_have_baked_textures_and_uvs(self):
+        path = Path(__file__).parent / 'assets/environment.glb'
+        with path.open('rb') as f:
+            f.read(12)
+            length, _ = struct.unpack('<II',f.read(8))
+            gltf = json.loads(f.read(length))
+        checked = set()
+        for mesh in gltf['meshes']:
+            for primitive in mesh['primitives']:
+                material = gltf['materials'][primitive['material']]
+                name = material.get('name','')
+                if name.startswith(('Plaster','Unfinished brick','Lane concrete','Worn timber')):
+                    self.assertIn('TEXCOORD_0',primitive['attributes'],name+' has no UVs')
+                    self.assertIn('baseColorTexture',material['pbrMetallicRoughness'],name+' lost its texture')
+                    checked.add(name.split('.')[0])
+        self.assertGreaterEqual(len(checked),9)
+
     def test_walk_has_looping_leg_and_arm_animation(self):
         path = Path(__file__).parent / 'assets/walk.glb'
         with path.open('rb') as f:

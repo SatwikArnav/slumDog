@@ -37,10 +37,12 @@ uniform sampler2D texture0;
 uniform vec4 colDiffuse;
 out vec4 finalColor;
 void main() {
-    vec4 base = texture(texture0, uv)*colDiffuse*color;
+    vec4 texel = texture(texture0, uv);
+    vec4 base = vec4(pow(texel.rgb, vec3(2.2))*colDiffuse.rgb*color.rgb,
+                     texel.a*colDiffuse.a*color.a);
     if (base.a < 0.25) discard;
     float sunlight = max(dot(normalize(normal), normalize(vec3(-0.4, 0.85, 0.3))), 0.0);
-    finalColor = vec4(base.rgb*(0.58 + 0.42*sunlight), base.a);
+    finalColor = vec4(pow(base.rgb*(0.65 + 0.55*sunlight), vec3(1.0/2.2)), base.a);
 }
 '''
 
@@ -81,9 +83,16 @@ def main():
     print('LOADED', environment.meshCount, 'environment meshes;', character.meshCount,
           'character meshes;', animation.keyframeCount, 'animation keyframes', flush=True)
     shader = rl.load_shader_from_memory(VERTEX, FRAGMENT)
+    filtered = set()
     for model in (environment, character):
         for i in range(model.materialCount):
             model.materials[i].shader = shader
+            surface = model.materials[i].maps[rl.MATERIAL_MAP_ALBEDO]
+            if surface.texture.id not in filtered:
+                if surface.texture.width > 1 and surface.texture.height > 1:
+                    rl.gen_texture_mipmaps(ffi.addressof(surface,'texture'))
+                    rl.set_texture_filter(surface.texture,rl.TEXTURE_FILTER_TRILINEAR)
+                filtered.add(surface.texture.id)
     yaw, pitch, distance = math.pi, .18, 2.7
     captured = not args.verify
     if captured:

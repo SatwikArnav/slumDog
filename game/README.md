@@ -75,10 +75,19 @@ shorten the follow distance when a wall is behind the player.
 The exporter writes `game/assets/environment.glb`, `character.glb`, `walk.glb`, and
 `scene.json`. Rerun it after changing source Blender scenes. The character retains
 its sampled skeletal action and cigarette attachment. Fine beard geometry and
-subdivision are omitted for performance. Procedural materials are reduced to
-diffuse textures/colours with simple directional lighting. Exhaled smoke uses
-lightweight raylib particles. Blender's volume fields, baked lighting, and full
-material networks are not reproduced. Smoke uses persistent, noise-textured
+subdivision are omitted for performance. Static Blender materials are baked into
+UV texture atlases before export: the original plaster, ground-level weathering,
+brick, timber, roofing, fabric, and lane networks are evaluated in their original
+world coordinates, with a restrained amount of local ambient occlusion. Existing
+image UVs and transparent staining decals are preserved. Atlas textures use
+mipmaps and trilinear filtering, and the shader converts between sRGB textures
+and linear lighting. Static geometry is batched by material to reduce draw calls.
+`game/assets/surface_bakes.json` records the baked materials and resolutions.
+Re-exporting requires Blender/Cycles CPU and takes longer than a plain GLB export.
+The GLBs include these textures; playing still does not require Blender.
+
+Lighting uses a simple directional shader; Blender's full lighting, reflections,
+normal/bump networks and volume fields are not reproduced. Smoke uses persistent, noise-textured
 billboards with transparent edges, upward drift, air drag, expansion, and gradual
 fading. Cigarette wisps follow the animated ember, and the exhale plume starts at
 the animated mouth during exhalation. Particles continue dissipating after the
@@ -101,6 +110,7 @@ change, and writes seven screenshots under ignored `game/captures/`. It exits
 successfully only after those checks pass. A software OpenGL test was run with
 `DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1` using a temporary Xorg dummy display.
 
-The unit suite also checks actual leg/arm rotation tracks and loop closure in
+The unit suite checks that shop and lane surfaces retain both UVs and image
+texture references, as well as actual leg/arm rotation tracks and loop closure in
 the exported GLB, distance-driven walk timing, collisions, smoke emission timing,
 particle drift/lifetime, texture edges, and attachment interpolation.

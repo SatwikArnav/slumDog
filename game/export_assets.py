@@ -6,6 +6,7 @@ from pathlib import Path
 import bpy
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_walk import make_walk, sockets
+from bake_environment import prepare_environment
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'game' / 'assets'
@@ -18,10 +19,16 @@ def simplify_materials():
         if not mat.use_nodes:
             continue
         old = mat.node_tree.nodes.get('Principled BSDF')
+        if mat.get('baked_original_surface'):
+            continue
         color = tuple(old.inputs['Base Color'].default_value) if old else tuple(mat.diffuse_color)
+        color_node = old.inputs['Base Color'].links[0].from_node if old and old.inputs['Base Color'].is_linked else None
         images = [n.image for n in mat.node_tree.nodes if n.type == 'TEX_IMAGE' and n.image
                   and (n.image.packed_file or Path(bpy.path.abspath(n.image.filepath)).is_file())
                   and not any(s in n.image.name.lower() for s in ('normal', '_nor', 'rough', 'metal', 'moisture'))]
+        if color_node and color_node.type == 'TEX_IMAGE' and color_node.image:
+            images = [color_node.image]
+        alpha_image = old.inputs['Alpha'].is_linked if old else False
         mat.node_tree.nodes.clear()
         bsdf = mat.node_tree.nodes.new('ShaderNodeBsdfPrincipled')
         bsdf.inputs['Base Color'].default_value = color
@@ -32,8 +39,9 @@ def simplify_materials():
             tex = mat.node_tree.nodes.new('ShaderNodeTexImage')
             tex.image = images[0]
             mat.node_tree.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
-            if any(s in mat.name.lower() for s in ('hair', 'eye', 'brow')):
+            if alpha_image or any(s in mat.name.lower() for s in ('hair', 'eye', 'brow')):
                 mat.node_tree.links.new(tex.outputs['Alpha'], bsdf.inputs['Alpha'])
+                mat.surface_render_method = 'DITHERED'
 
 
 def export(name, animated=False):
@@ -53,6 +61,8 @@ scene = bpy.context.scene
 scene.frame_set(1)
 collision = []
 for obj in list(scene.objects):
+    if obj.name == 'Material metre coordinates':
+        continue
     if obj.name.startswith('COL_'):
         points = [obj.matrix_world @ __import__('mathutils').Vector(c) for c in obj.bound_box]
         collision.append([min(p.x for p in points), min(-p.y for p in points),
@@ -67,6 +77,7 @@ for obj in list(scene.objects):
         bpy.ops.object.select_all(action='DESELECT')
         obj.select_set(True)
         bpy.ops.object.convert(target='MESH')
+prepare_environment(OUT)
 export('environment.glb')
 metadata = {'collision': collision, 'spawn': [-.7, 0, 3.2],
             'smoking_seconds': 215 / 24, 'stride_length': 1.2}
