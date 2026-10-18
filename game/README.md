@@ -62,10 +62,12 @@ virtual display for automated checks, not for interactive play.
 | Escape | Exit |
 
 Movement pauses while smoking. Additional E presses during the action are ignored.
-Walking uses a generated skeletal IK cycle with alternating planted steps, foot
-lift, pelvis motion, and opposing arm swings. Playback follows actual distance
-travelled; pushing against a wall fades back to idle. Turning and animation
-transitions are smoothed. This is a procedural authored walk, not motion capture.
+Walking uses foot IK with narrower steps, heel contact, toe-off, low foot clearance,
+and a relaxed shoulder-driven FK arm swing. Elbow poles no longer pull the hands
+sideways. Playback follows actual distance travelled; pushing against a wall fades
+back to idle. Acceleration, braking, turning, and animation transitions are smoothed,
+and the player slows down to make sharp turns instead of sliding sideways through
+them. This is a procedural authored walk, not motion capture.
 Building collision uses the Blender scene's `COL_` volumes. Small props, roofs,
 stairs, and interiors are not a complete collision/navigation system. Camera rays
 shorten the follow distance when a wall is behind the player.
@@ -74,8 +76,11 @@ shorten the follow distance when a wall is behind the player.
 
 The exporter writes `game/assets/environment.glb`, `character.glb`, `walk.glb`, and
 `scene.json`. Rerun it after changing source Blender scenes. The character retains
-its sampled skeletal action and cigarette attachment. Fine beard geometry and
-subdivision are omitted for performance. Static Blender materials are baked into
+its sampled skeletal action and cigarette attachment. The source covered-skin
+mask is applied before skinning so knees/elbows do not poke through the outfit.
+Garments and shoes receive one bind-space subdivision level for smoother joints;
+fine beard geometry and additional subdivision are omitted for performance.
+Static Blender materials are baked into
 UV texture atlases before export: the original plaster, ground-level weathering,
 brick, timber, roofing, fabric, and lane networks are evaluated in their original
 world coordinates, with a restrained amount of local ambient occlusion. Existing
@@ -85,6 +90,15 @@ and linear lighting. Static geometry is batched by material to reduce draw calls
 `game/assets/surface_bakes.json` records the baked materials and resolutions.
 Re-exporting requires Blender/Cycles CPU and takes longer than a plain GLB export.
 The GLBs include these textures; playing still does not require Blender.
+To rebuild only the character clips without rebaking the unchanged level, run:
+
+```sh
+blender -b --python-exit-code 1 --python game/export_assets.py -- --character-only
+```
+
+`game/assets/walk_validation.json` records sampled limb positions, ankle tracking
+error, and foot separation. Tests reject overextended legs, crossed feet, abrupt
+limb position changes, and discontinuous loops.
 
 Lighting uses a simple directional shader; Blender's full lighting, general
 material reflections, normal/bump networks and volume fields are not reproduced.
@@ -127,3 +141,20 @@ the exported GLB, distance-driven walk timing, collisions, smoke emission timing
 particle drift/lifetime, texture edges, and attachment interpolation.
 Water checks verify the camera mirror plane and the actual exported puddle height
 and edge mask.
+
+## Gameplay video
+
+[Movement and smoking preview](previews/movement-preview.mp4) is a 20-second video
+recorded from this raylib application. It shows walking from behind, a camera cut
+to a front view of walking, braking, smoking, and returning to idle. It is not a
+Blender render. Download the MP4 from GitHub or pull this branch and open the file
+with your video player.
+
+To reproduce the recording with ffmpeg installed and a working desktop display:
+
+```sh
+.venv/bin/python game/main.py --record game/previews/movement-preview.mp4
+```
+
+Recording advances simulation at a fixed 24 frames per second and writes 480
+frames at 960×640. Encoding speed is independent of live gameplay performance.

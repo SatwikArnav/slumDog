@@ -2,6 +2,7 @@
 import argparse
 import json
 import math
+import hashlib
 from pathlib import Path
 
 import pyray as rl
@@ -9,6 +10,7 @@ from raylib import ffi
 from state import Player
 from smoke import Smoke, texture_rgba, socket_at, world_socket
 from water import Water, HEIGHT
+from record_preview import Preview
 
 HERE = Path(__file__).resolve().parent
 
@@ -57,15 +59,18 @@ void main() {
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--verify', action='store_true', help='Run scripted movement/smoke checks and capture frames')
+    parser.add_argument('--record',metavar='MP4',help='Record a 20-second scripted gameplay preview (requires ffmpeg)')
     args = parser.parse_args()
+    if args.verify and args.record:
+        parser.error('Use either --verify or --record')
     for name in ('environment.glb', 'character.glb', 'walk.glb', 'scene.json'):
         if not (HERE / 'assets' / name).is_file():
             parser.error('Missing exported assets. Run blender -b --python game/export_assets.py first.')
     config = json.loads((HERE / 'assets' / 'scene.json').read_text())
     player = Player(x=config['spawn'][0], z=config['spawn'][2], duration=config['smoking_seconds'])
     rl.set_config_flags(rl.FLAG_MSAA_4X_HINT | rl.FLAG_WINDOW_RESIZABLE)
-    rl.init_window(1100, 700, 'slumDog | Shanti Nagar')
-    rl.set_target_fps(60)
+    rl.init_window(960 if args.record else 1100, 640 if args.record else 700, 'slumDog | Shanti Nagar')
+    rl.set_target_fps(0 if args.record else 60)
     environment = rl.load_model(str(HERE / 'assets/environment.glb'))
     character = rl.load_model(str(HERE / 'assets/character.glb'))
     if environment.meshCount == 0 or character.meshCount == 0:
@@ -104,16 +109,19 @@ def main():
     reflection_location = rl.get_shader_location(shader,'reflectionPass')
     rl.set_shader_value(shader,rl.get_shader_location(shader,'waterHeight'),ffi.new('float *',HEIGHT),rl.SHADER_UNIFORM_FLOAT)
     yaw, pitch, distance = math.pi, .18, 2.7
-    captured = not args.verify
+    captured = not (args.verify or args.record)
     if captured:
         rl.disable_cursor()
     camera = rl.Camera3D(rl.Vector3(), rl.Vector3(), rl.Vector3(0, 1, 0), 58, rl.CAMERA_PERSPECTIVE)
     stage = 0
     initial = (player.x, player.z)
     signatures = []
+    recording = Preview(args.record) if args.record else None
     while not rl.window_should_close():
-        dt = min(rl.get_frame_time(), .05)
-        if args.verify:
+        dt = 1/recording.fps if recording else min(rl.get_frame_time(), .05)
+        if recording:
+            player,yaw = recording.step(player,config)
+        elif args.verify:
             if stage == 1:
                 for _ in range(20):
                     player.step(.05, 1, 0, yaw, False, config['collision'])
@@ -199,7 +207,7 @@ def main():
         water.draw_environment()
         rl.draw_model_ex(character, rl.Vector3(player.x, 0, player.z), rl.Vector3(0, 1, 0),
                          math.degrees(player.yaw), rl.Vector3(1, 1, 1), rl.WHITE)
-        water.draw(camera,rl.get_time())
+        water.draw(camera,recording.time if recording else rl.get_time())
         # Depth-test against the street, but do not let transparent puffs occlude
         # each other. Back-to-front sorting gives stable alpha compositing.
         rl.rl_draw_render_batch_active()
@@ -224,8 +232,13 @@ def main():
             status = 'SMOKING  |  Returns to idle when finished'
         rl.draw_rectangle(12, rl.get_screen_height()-46, 490, 34, rl.Color(18, 24, 24, 225))
         rl.draw_text(status, 23, rl.get_screen_height()-37, 18, rl.RAYWHITE)
-        rl.draw_fps(rl.get_screen_width()-95, 15)
+        if recording:
+            rl.draw_text('PREVIEW',rl.get_screen_width()-100,15,18,rl.LIGHTGRAY)
+        else:
+            rl.draw_fps(rl.get_screen_width()-95, 15)
         rl.end_drawing()
+        if recording and recording.capture():
+            break
         if args.verify:
             captures = HERE / 'captures'
             captures.mkdir(exist_ok=True)
@@ -241,9 +254,12 @@ def main():
             if stage == 8:
                 assert water.size == (rl.get_screen_width()//2,rl.get_screen_height()//2)
             # Animation must deform mesh geometry, not just advance a state label.
-            mesh = character.meshes[0]
-            if mesh.animVertices != ffi.NULL:
-                signatures.append(tuple(round(mesh.animVertices[i], 5) for i in range(min(mesh.vertexCount*3, 900))))
+            signature = hashlib.sha256()
+            for i in range(character.meshCount):
+                mesh = character.meshes[i]
+                if mesh.animVertices != ffi.NULL:
+                    signature.update(ffi.buffer(mesh.animVertices,mesh.vertexCount*3*4))
+            signatures.append(signature.digest())
             stage += 1
             if stage == 9:
                 assert len(set(signatures)) > 1, 'Character vertices did not animate'
@@ -251,6 +267,8 @@ def main():
                 assert signatures[3] != signatures[0], 'Smoking pose did not change'
                 print('GAME_VERIFY_OK: walk, smoke -> idle, puddle reflection and resize, nine captures', flush=True)
                 break
+    if recording:
+        recording.close()
     rl.unload_model_animations(animations, count[0])
     rl.unload_model_animations(walks, walk_count[0])
     rl.unload_texture(smoke_texture)

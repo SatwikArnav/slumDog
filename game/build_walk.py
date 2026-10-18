@@ -12,54 +12,100 @@ def make_walk(rig):
     basis = {p.name: p.matrix_basis.copy() for p in rig.pose.bones}
     rig.animation_data_clear()
     rig.animation_data_create()
-    rig.animation_data.action = bpy.data.actions.new('Walk | planted steps and counter-swing')
-    scene.frame_start, scene.frame_end, scene.render.fps = 1, 33, 32
-    for frame in range(1, 34):
+    rig.animation_data.action = bpy.data.actions.new('Walk | heel contact, toe-off and relaxed arms')
+    # Wrist IK and fixed elbow poles fight a relaxed arm swing. Bake FK arms for
+    # this clip; the smoking clip has already been exported with its original IK.
+    for side in ('L','R'):
+        for name in ('lowerarm01.','wrist.'):
+            for constraint in rig.pose.bones[name+side].constraints:
+                constraint.influence = 0
+    scene.frame_start, scene.frame_end, scene.render.fps = 1, 49, 48
+    report = {'max_ankle_error':0., 'min_foot_separation':10., 'frames':[]}
+    for frame in range(1, 50):
         scene.frame_set(frame)
-        phase = (frame-1)/32
+        phase = (frame-1)/48
         angle = phase*math.tau
         for p in rig.pose.bones:
             p.matrix_basis = basis[p.name].copy()
         # Pelvis shifts toward the support foot, with a small twice-per-stride rise.
         pelvis = rig.pose.bones['root']
-        pelvis.matrix = Matrix.Translation(Vector((.018*math.sin(angle), 0,
-                                                   -.075+.010*math.cos(2*angle)))) @ base[pelvis.name]
+        pelvis.matrix = Matrix.Translation(Vector((.012*math.sin(angle), 0,
+                                                   -.065+.010*math.cos(2*(angle-.6*math.pi))))) @ base[pelvis.name]
         pelvis.keyframe_insert('location', frame=frame)
-        for side, offset in [('L', 0), ('R', .5)]:
-            t = (phase+offset) % 1
-            if t < .6:
-                y, lift = -.36+1.2*t, 0
-                tilt = .10*max(0, (t-.45)/.15)
-            else:
-                u = (t-.6)/.4
-                smooth = u*u*(3-2*u)
-                y, lift = .36-.72*smooth, .12*math.sin(math.pi*u)**1.3
-                tilt = -.15*math.sin(math.pi*u)
-            foot = rig.pose.bones['CTRL_foot.'+side]
-            foot.matrix = (Matrix.Translation(Vector((0, y, lift))) @
-                           base[foot.name] @ Matrix.Rotation(tilt, 4, 'X'))
-            for prop in ('location', 'rotation_quaternion', 'rotation_euler'):
-                foot.keyframe_insert(prop, frame=frame)
-            # Hands oppose the leg swing; use existing two-bone IK chains.
-            hand = rig.pose.bones['CTRL_hand.'+side]
-            hand.matrix = Matrix.Translation(Vector((0, -.17*math.cos(math.tau*t),
-                                                     .025+.025*math.sin(math.tau*t)))) @ base[hand.name]
-            for prop in ('location', 'rotation_quaternion', 'rotation_euler'):
-                hand.keyframe_insert(prop, frame=frame)
-            elbow = rig.pose.bones['CTRL_elbow.'+side]
-            elbow.matrix = Matrix.Translation(Vector((-.12 if side == 'L' else .12,
-                                                      -.08*math.cos(math.tau*t), -.04))) @ base[elbow.name]
-            elbow.keyframe_insert('location', frame=frame)
         chest = rig.pose.bones['spine02']
         chest.rotation_mode = 'XYZ'
-        chest.rotation_euler.y += .025*math.sin(angle)
-        chest.rotation_euler.z += .025*math.sin(angle)
+        chest.rotation_euler.y += .012*math.sin(angle)
+        chest.rotation_euler.z += .018*math.sin(angle)
         chest.keyframe_insert('rotation_euler', frame=frame)
+        for side, offset in [('L', 0), ('R', .5)]:
+            t = (phase+offset) % 1
+            half = 1.1*.62/2
+            if t < .62:
+                y, lift = -half+1.1*t, 0
+                if t < .09:
+                    tilt = -.10*(1-t/.09)
+                    pivot = Vector((0,.045,-.06))
+                else:
+                    u = max(0,min(1,(t-.48)/.14))
+                    tilt = .22*u*u*(3-2*u)
+                    pivot = Vector((0,-.16,-.06))
+            else:
+                u = (t-.62)/.38
+                # Match stance velocity at lift-off and heel contact. A zero-
+                # velocity sine swing caused a visible hitch at every step.
+                velocity = 1.1*.38
+                delta = -2*half
+                y = half+velocity*u+(3*delta-3*velocity)*u*u+(-2*delta+2*velocity)*u**3
+                lift = .065*math.sin(math.pi*u)**1.5
+                smooth = u*u*(3-2*u)
+                tilt = .22*(1-smooth)-.10*smooth
+                pivot = Vector((0,-.16*(1-smooth)+.045*smooth,-.06))
+            foot = rig.pose.bones['CTRL_foot.'+side]
+            contact = base[foot.name].translation+pivot
+            lateral = -.10 if side == 'L' else .10
+            foot.matrix = (Matrix.Translation(Vector((lateral,y,lift))) @
+                           Matrix.Translation(contact) @ Matrix.Rotation(tilt,4,'X') @
+                           Matrix.Translation(-contact) @ base[foot.name])
+            for prop in ('location', 'rotation_quaternion', 'rotation_euler'):
+                foot.keyframe_insert(prop, frame=frame)
+            knee = rig.pose.bones['CTRL_knee.'+side]
+            knee.matrix = Matrix.Translation(Vector((-.05 if side == 'L' else .05,-.08,0))) @ base[knee.name]
+            knee.keyframe_insert('location',frame=frame)
         bpy.context.view_layer.update()
+        torso = rig.pose.bones['spine01'].matrix @ base['spine01'].inverted()
+        for side, offset in [('L',0),('R',.5)]:
+            t = (phase+offset) % 1
+            upper = rig.pose.bones['upperarm01.'+side]
+            lower = rig.pose.bones['lowerarm01.'+side]
+            wrist = rig.pose.bones['wrist.'+side]
+            shoulder = base[upper.name].translation
+            # Swing about the shoulder, not a translated wrist locked to an
+            # outward pole. Bring the original wide stance of the arms inward.
+            rotation = Matrix.Rotation(.20*math.cos(math.tau*t),4,'X') @ Matrix.Rotation(.25 if side=='L' else -.25,4,'Y')
+            upper.matrix = torso @ Matrix.Translation(shoulder) @ rotation @ Matrix.Translation(-shoulder) @ base[upper.name]
+            bpy.context.view_layer.update()
+            upper_delta = upper.matrix @ base[upper.name].inverted()
+            elbow = base[lower.name].translation
+            lower.matrix = upper_delta @ Matrix.Translation(elbow) @ Matrix.Rotation(-.08-.025*(1-math.cos(math.tau*t)),4,'X') @ Matrix.Translation(-elbow) @ base[lower.name]
+            bpy.context.view_layer.update()
+            wrist.matrix = lower.matrix @ base[lower.name].inverted() @ base[wrist.name]
+            for bone in (upper,lower,wrist):
+                bone.rotation_mode = 'QUATERNION'
+                for prop in ('location','rotation_quaternion','scale'):
+                    bone.keyframe_insert(prop,frame=frame)
+        bpy.context.view_layer.update()
+        for side in ('L','R'):
+            error = (rig.pose.bones['foot.'+side].head-rig.pose.bones['CTRL_foot.'+side].head).length
+            report['max_ankle_error'] = max(report['max_ankle_error'],error)
+        separation = abs(rig.pose.bones['foot.L'].head.x-rig.pose.bones['foot.R'].head.x)
+        report['min_foot_separation'] = min(report['min_foot_separation'],separation)
+        report['frames'].append({name:list(rig.pose.bones[name].head) for name in
+                                 ['foot.L','foot.R','lowerleg01.L','lowerleg01.R','wrist.L','wrist.R']})
     for curve in rig.animation_data.action.fcurves:
         for point in curve.keyframe_points:
             point.interpolation = 'LINEAR'
     scene.frame_set(1)
+    return report
 
 
 def sockets(rig):

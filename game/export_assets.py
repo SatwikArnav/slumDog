@@ -56,31 +56,34 @@ def export(name, animated=False):
     )
 
 
-bpy.ops.wm.open_mainfile(filepath=str(ROOT / 'environment' / 'Shanti_Nagar_Level.blend'))
-scene = bpy.context.scene
-scene.frame_set(1)
-collision = []
-for obj in list(scene.objects):
-    if obj.name == 'Material metre coordinates':
-        continue
-    if obj.name.startswith('COL_'):
-        points = [obj.matrix_world @ __import__('mathutils').Vector(c) for c in obj.bound_box]
-        collision.append([min(p.x for p in points), min(-p.y for p in points),
-                          max(p.x for p in points), max(-p.y for p in points)])
-    character = any(c.name == 'Character' for c in obj.users_collection)
-    if character or obj.hide_render or obj.type not in {'MESH', 'CURVE'}:
-        bpy.data.objects.remove(obj, do_unlink=True)
-        continue
-    obj.animation_data_clear()
-    if obj.type == 'CURVE':
-        bpy.context.view_layer.objects.active = obj
-        bpy.ops.object.select_all(action='DESELECT')
-        obj.select_set(True)
-        bpy.ops.object.convert(target='MESH')
-prepare_environment(OUT)
-export('environment.glb')
-metadata = {'collision': collision, 'spawn': [-.7, 0, 3.2],
-            'smoking_seconds': 215 / 24, 'stride_length': 1.2}
+if '--character-only' in sys.argv:
+    metadata = json.loads((OUT / 'scene.json').read_text())
+else:
+    bpy.ops.wm.open_mainfile(filepath=str(ROOT / 'environment' / 'Shanti_Nagar_Level.blend'))
+    scene = bpy.context.scene
+    scene.frame_set(1)
+    collision = []
+    for obj in list(scene.objects):
+        if obj.name == 'Material metre coordinates':
+            continue
+        if obj.name.startswith('COL_'):
+            points = [obj.matrix_world @ __import__('mathutils').Vector(c) for c in obj.bound_box]
+            collision.append([min(p.x for p in points), min(-p.y for p in points),
+                              max(p.x for p in points), max(-p.y for p in points)])
+        character = any(c.name == 'Character' for c in obj.users_collection)
+        if character or obj.hide_render or obj.type not in {'MESH', 'CURVE'}:
+            bpy.data.objects.remove(obj, do_unlink=True)
+            continue
+        obj.animation_data_clear()
+        if obj.type == 'CURVE':
+            bpy.context.view_layer.objects.active = obj
+            bpy.ops.object.select_all(action='DESELECT')
+            obj.select_set(True)
+            bpy.ops.object.convert(target='MESH')
+    prepare_environment(OUT)
+    export('environment.glb')
+    metadata = {'collision': collision, 'spawn': [-.7, 0, 3.2],
+                'smoking_seconds': 215 / 24, 'stride_length': 1.2}
 
 bpy.ops.wm.open_mainfile(filepath=str(ROOT / 'character' / 'Rook_Rebuilt.blend'))
 scene = bpy.context.scene
@@ -90,13 +93,38 @@ for obj in list(scene.objects):
         obj.name.startswith(('Plane', 'WGT_', 'Smoke', 'Beard'))):
         bpy.data.objects.remove(obj, do_unlink=True)
         continue
+    if obj.type == 'MESH' and obj.data.shape_keys:
+        # Morph export is disabled for the game; retain the bind shape before
+        # applying topology-changing coverage modifiers on this in-memory copy.
+        obj.shape_key_clear()
     for mod in list(obj.modifiers):
+        if mod.type == 'MASK':
+            # A skinned glTF export does not reliably evaluate non-armature
+            # modifiers. Apply the source's hidden-skin mask in rest space.
+            bpy.ops.object.select_all(action='DESELECT')
+            obj.select_set(True)
+            bpy.context.view_layer.objects.active = obj
+            before = len(obj.data.polygons)
+            bpy.ops.object.modifier_apply(modifier=mod.name)
+            metadata['covered_skin_faces_removed'] = before-len(obj.data.polygons)
         if mod.type == 'SUBSURF':
-            obj.modifiers.remove(mod)
+            if obj.name.startswith(('Field jacket','Leather work')):
+                # Subdivide in bind space, preserving interpolated skin weights.
+                # Applying it after the posed armature would corrupt the bind.
+                bpy.ops.object.select_all(action='DESELECT')
+                obj.select_set(True)
+                bpy.context.view_layer.objects.active = obj
+                mod.levels = mod.render_levels = 1
+                bpy.ops.object.modifier_move_to_index(modifier=mod.name,index=0)
+                bpy.ops.object.modifier_apply(modifier=mod.name)
+            else:
+                obj.modifiers.remove(mod)
 rig = next(o for o in scene.objects if o.type == 'ARMATURE')
 metadata['smoke_sockets'] = sockets(rig)
 export('character.glb', animated=True)
-make_walk(rig)
+report = make_walk(rig)
+(OUT / 'walk_validation.json').write_text(json.dumps(report,indent=2))
+metadata['stride_length'] = 1.1
 metadata['walk_sockets'] = sockets(rig)
 export('walk.glb', animated=True)
 (OUT / 'scene.json').write_text(json.dumps(metadata, separators=(',', ':')))

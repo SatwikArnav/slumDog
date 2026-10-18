@@ -1,11 +1,27 @@
 """Inspect exported skeletal tracks so static-leg exports cannot pass unnoticed."""
 import json
+import math
 from pathlib import Path
 import struct
 import unittest
 
 
 class ExportChecks(unittest.TestCase):
+    def test_covered_skin_is_removed_before_skinning(self):
+        metadata = json.loads((Path(__file__).parent/'assets/scene.json').read_text())
+        self.assertGreater(metadata['covered_skin_faces_removed'],100)
+
+    def test_authored_gait_does_not_overextend_or_snap_limbs(self):
+        report = json.loads((Path(__file__).parent/'assets/walk_validation.json').read_text())
+        self.assertLess(report['max_ankle_error'],.005,'Foot targets exceed leg reach')
+        self.assertGreater(report['min_foot_separation'],.16,'Feet cross during the stride')
+        frames = report['frames']
+        for name in frames[0]:
+            points = [f[name] for f in frames]
+            self.assertLess(math.dist(points[0],points[-1]),.001,name+' jumps at loop seam')
+            limit = .025 if name.startswith('wrist') else .08
+            self.assertLess(max(math.dist(a,b) for a,b in zip(points,points[1:])),limit,name+' snaps between poses')
+
     def test_shop_surfaces_have_baked_textures_and_uvs(self):
         path = Path(__file__).parent / 'assets/environment.glb'
         with path.open('rb') as f:
