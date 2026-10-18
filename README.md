@@ -54,6 +54,13 @@ blender -b environment/Shanti_Nagar_Level.blend --python environment/render_walk
 
 Intermediate frame sequences, logs, and Blender backup files are ignored by Git.
 
+## Interactive raylib viewer
+
+The [raylib viewer](game/README.md) exports the Blender assets into a third-person
+desktop application. WASD moves the character, the mouse turns the camera, and
+E plays the smoking action once before returning to idle. See its README for
+installation, Blender export, controls, and real-time rendering limitations.
+
 ## Credits and licensing
 
 Original project code is covered by the repository's [MIT license](LICENSE). Third-party assets retain their own licenses: MakeHuman graphical assets and Poly Haven assets are CC0; Noto Sans Devanagari uses the SIL Open Font License. See [CREDITS.md](CREDITS.md), the project-specific notes, and the bundled font license.
