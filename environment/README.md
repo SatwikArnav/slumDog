@@ -18,6 +18,11 @@ The level is an editable environment scene, not a standalone playable game. The 
 
 ## Rebuild
 
+The raylib version now has five expanded, furnished shop interiors. Its exporter
+applies `upgrade_shops.py` to this original scene before baking textures. Run
+`blender -b --python upgrade_shops.py` from this directory to save an editable
+`Shanti_Nagar_Shops.blend` with those changes. The original scene remains intact.
+
 Use Blender 4.0 or compatible newer versions:
 
     blender -b --python build_level.py

@@ -1,9 +1,14 @@
 """Collect evaluated Blender building/prop bounds for street navigation."""
 from mathutils import Vector
 import bpy
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'environment'))
+from upgrade_shops import upgrade_shops
 
 
 def collect_navigation():
+    upgrade_shops()
     bpy.data.collections['Collision'].hide_viewport = False
     bpy.context.scene.frame_set(1)
     bpy.context.view_layer.update()

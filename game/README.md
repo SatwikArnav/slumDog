@@ -49,6 +49,38 @@ The game opens a native desktop window and needs an X11/Wayland desktop and Open
 3.3 support. It cannot be played inside the chat. A display-less shell needs a
 virtual display for automated checks, not for interactive play.
 
+## Expanded shops
+
+Five shop interiors use the full existing building shells (roughly 3.4–4.5m
+clear depth instead of the old 1.4m false back walls). Walk through the open
+entrances with WASD. Wall, shelf and counter collisions replace the old solid
+building volumes, leaving a central aisle through each shop.
+
+Ganesh Kirana has labelled groceries, grain sacks and a weighing scale; Shankar
+Chai has a stove, kettle, glasses, seating and wash basin; Rahim Tailors has a
+sewing machine, cutting table, fabric rolls and hanging garments. Sai Cycle Works
+has a spoked bicycle and tools, and Shanti Electrical has appliances awaiting
+repair and boxed parts. Shutters, floor tiles, fans, conduit, calendars, payment
+notices and overhead cartons complete the rooms. Raylib adds warm interior fill
+and reduces daylight deeper into the shops; this is approximate lighting rather
+than dynamic shadow mapping.
+
+The original Blender source is preserved. `environment/upgrade_shops.py` applies
+the shop changes automatically during environment export and navigation export.
+To rebuild just the level, or save a separate editable Blender scene:
+
+```bash
+blender -b -t 4 --python-exit-code 1 --python game/export_assets.py -- --environment-only
+blender -b --python-exit-code 1 --python environment/upgrade_shops.py
+```
+
+The second command writes `environment/Shanti_Nagar_Shops.blend`.
+The included [shop tour](previews/shops-preview.mp4) is recorded in raylib:
+
+```bash
+python game/main.py --record-shops game/previews/shops-preview.mp4
+```
+
 ## Indian street-dog NPC
 
 An original Indie/pariah-style dog roams the ground-level lane and courtyard:

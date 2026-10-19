@@ -15,7 +15,7 @@ class Preview:
     fps = 24
     duration = 20
 
-    def __init__(self,output,dog_focus=False):
+    def __init__(self,output,dog_focus=False,shop_focus=False):
         ffmpeg = shutil.which('ffmpeg')
         if not ffmpeg:
             raise RuntimeError('Video recording requires ffmpeg on PATH')
@@ -23,9 +23,12 @@ class Preview:
         self.output.parent.mkdir(parents=True,exist_ok=True)
         self.frame = 0
         self.dog_focus = dog_focus
+        self.shop_focus = shop_focus
         self.barks = []
         if dog_focus:
             self.duration = 15
+        if shop_focus:
+            self.duration = 25
         self.process = subprocess.Popen([
             ffmpeg,'-hide_banner','-loglevel','error','-y','-f','rawvideo',
             '-pixel_format','rgba','-video_size',f'{rl.get_screen_width()}x{rl.get_screen_height()}',
@@ -41,8 +44,8 @@ class Preview:
         if self.frame in (0,5*self.fps):
             player = Player(x=config['spawn'][0],z=config['spawn'][2],duration=config['smoking_seconds'])
         t = self.time
-        walking = not self.dog_focus and 1 <= t < 9
-        smoke = not self.dog_focus and self.frame == int(9.5*self.fps)
+        walking = not (self.dog_focus or self.shop_focus) and 1 <= t < 9
+        smoke = not (self.dog_focus or self.shop_focus) and self.frame == int(9.5*self.fps)
         player.step(1/self.fps,int(walking),0,math.pi,smoke,config['collision'])
         view_yaw = math.pi if t < 5 else 2*math.pi-.35
         return player,view_yaw

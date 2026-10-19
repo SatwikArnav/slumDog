@@ -78,5 +78,30 @@
     "material": "Coarse woven storage sacks",
     "image": "Baked Coarse woven storage sacks.001",
     "size": 1024
+  },
+  {
+    "material": "Shop limewash with wear",
+    "image": "Baked Shop limewash with wear.001",
+    "size": 1024
+  },
+  {
+    "material": "Shop worn terrazzo",
+    "image": "Baked Shop worn terrazzo.001",
+    "size": 1024
+  },
+  {
+    "material": "Shop fabric 1",
+    "image": "Baked Shop fabric 1.001",
+    "size": 1024
+  },
+  {
+    "material": "Shop fabric 0",
+    "image": "Baked Shop fabric 0.001",
+    "size": 1024
+  },
+  {
+    "material": "Shop fabric 2",
+    "image": "Baked Shop fabric 2.001",
+    "size": 1024
   }
 ]

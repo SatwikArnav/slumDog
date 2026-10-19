@@ -19,7 +19,7 @@ Press **Numpad 0** for the active camera and **Space** to play. Material Preview
 
 Shanti Nagar is a fictional Mumbai-inspired basti informed by Dharavi references. The first detailed section contains a roughly 28-metre lane, tea stall, local shops, residential fronts, and an adjoining workshop courtyard. Surrounding buildings suggest a larger neighbourhood. Local-language signage, tin awnings, roof additions, water tanks, service cables, drains, washing, and household props establish the setting.
 
-The walking-height camera moves through the street to the courtyard. Named collections separate architecture, infrastructure, props, the character, lighting, cameras, and preliminary collision volumes. This is an editable environment scene; game-engine integration, navigation, varied crowds, sound, and further neighbourhood expansion are future work.
+The walking-height camera moves through the street to the courtyard. Named collections separate architecture, infrastructure, props, the character, lighting, cameras, and preliminary collision volumes. This editable scene supplies the raylib game below, which adds player controls, shop interiors, collision and a roaming dog. Varied crowds and further neighbourhood expansion remain future work.
 
 [Environment notes and credits](environment/README.md) · [Tea-stall still](previews/tea_stall.png) · [Courtyard still](previews/courtyard.png)
 
@@ -65,6 +65,11 @@ installation, Blender export, controls, and real-time rendering limitations.
 
 An [Indian street-dog NPC](game/README.md) roams, sniffs, and barks in the viewer.
 [Dog preview with sound](game/previews/indie-dog-preview.mp4).
+
+Five shops now have expanded, walkable interiors with distinct merchandise,
+workspaces and warmer interior lighting. [Watch the shop tour](game/previews/shops-preview.mp4).
+The game exporter applies [the shop upgrade](environment/upgrade_shops.py) to the
+original Blender scene; the original scene file remains available unchanged.
 
 ## Credits and licensing
 

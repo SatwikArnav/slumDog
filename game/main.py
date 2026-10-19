@@ -44,6 +44,9 @@ uniform int reflectionPass;
 uniform float waterHeight;
 uniform sampler2D texture0;
 uniform vec4 colDiffuse;
+uniform int shopCount;
+uniform vec4 shopRooms[5];
+uniform float shopWidths[5];
 out vec4 finalColor;
 void main() {
     if (reflectionPass == 1 && worldPosition.y < waterHeight+0.001) discard;
@@ -52,7 +55,21 @@ void main() {
                      texel.a*colDiffuse.a*color.a);
     if (base.a < 0.25) discard;
     float sunlight = max(dot(normalize(normal), normalize(vec3(-0.4, 0.85, 0.3))), 0.0);
-    finalColor = vec4(pow(base.rgb*(0.65 + 0.55*sunlight), vec3(1.0/2.2)), base.a);
+    vec3 lighting = vec3(0.65 + 0.55*sunlight);
+    for (int i=0; i<shopCount; i++) {
+        vec4 room = shopRooms[i];
+        float depth = (worldPosition.x-room.x)*room.z;
+        if (depth>0.0 && depth<room.w && abs(worldPosition.z+room.y)<shopWidths[i]*.5
+            && worldPosition.y<2.64 && worldPosition.y>-.05) {
+            vec3 lamp = vec3(room.x+room.z*1.4,2.47,-room.y);
+            vec3 delta = lamp-worldPosition;
+            float facing = max(0.0,dot(normalize(normal),normalize(delta)));
+            vec3 indoor = vec3(.32,.34,.35)+vec3(.85,.73,.54)*(.40+.65*facing)/(1.0+.22*dot(delta,delta));
+            indoor += .55*sunlight*exp(-1.6*depth);
+            lighting = mix(lighting,indoor,smoothstep(0.0,.5,depth));
+        }
+    }
+    finalColor = vec4(pow(base.rgb*lighting, vec3(1.0/2.2)), base.a);
 }
 '''
 
@@ -62,9 +79,15 @@ def main():
     parser.add_argument('--verify', action='store_true', help='Run scripted movement/smoke checks and capture frames')
     parser.add_argument('--record',metavar='MP4',help='Record a 20-second scripted gameplay preview (requires ffmpeg)')
     parser.add_argument('--record-dog',metavar='MP4',help='Record the roaming dog with bark audio')
+    parser.add_argument('--record-shops',metavar='MP4',help='Record a tour of all five expanded shop interiors')
     parser.add_argument('--mute',action='store_true',help='Disable live audio playback')
     args = parser.parse_args()
     dog_focus = bool(args.record_dog)
+    shop_focus = bool(args.record_shops)
+    if sum(bool(v) for v in (args.record,args.record_dog,args.record_shops))>1:
+        parser.error('Choose one recording mode')
+    if shop_focus:
+        args.record = args.record_shops
     if args.record_dog:
         if args.record:
             parser.error('Choose one recording mode')
@@ -104,6 +127,12 @@ def main():
     print('LOADED', environment.meshCount, 'environment meshes;', character.meshCount,
           'character meshes;', animation.keyframeCount, 'animation keyframes', flush=True)
     shader = rl.load_shader_from_memory(VERTEX, FRAGMENT)
+    shops = config.get('shops',[])
+    rl.set_shader_value(shader,rl.get_shader_location(shader,'shopCount'),ffi.new('int *',len(shops)),rl.SHADER_UNIFORM_INT)
+    for i,shop in enumerate(shops):
+        values = [shop['front'],shop['center_y'],shop['side'],shop['depth']]
+        rl.set_shader_value(shader,rl.get_shader_location(shader,f'shopRooms[{i}]'),ffi.new('float[]',values),rl.SHADER_UNIFORM_VEC4)
+        rl.set_shader_value(shader,rl.get_shader_location(shader,f'shopWidths[{i}]'),ffi.new('float *',shop['width']),rl.SHADER_UNIFORM_FLOAT)
     filtered = set()
     for model in (environment, character):
         for i in range(model.materialCount):
@@ -126,7 +155,7 @@ def main():
     stage = 0
     initial = (player.x, player.z)
     signatures = []
-    recording = Preview(args.record,dog_focus=dog_focus) if args.record else None
+    recording = Preview(args.record,dog_focus=dog_focus,shop_focus=shop_focus) if args.record else None
     while not rl.window_should_close():
         dt = 1/recording.fps if recording else min(rl.get_frame_time(), .05)
         dog_bounds = [dog.actor.x-.22,dog.actor.z-.22,dog.actor.x+.22,dog.actor.z+.22]
@@ -231,6 +260,17 @@ def main():
             camera.target = rl.Vector3(dog.actor.x,.38,dog.actor.z)
             camera.position = rl.Vector3(dog.actor.x-math.sin(angle)*1.5,1.0,
                                          dog.actor.z-math.cos(angle)*1.5)
+        if shop_focus:
+            shot = min(4,int(recording.time/5))
+            shop = config['shops'][shot]
+            t = (recording.time%5)/5
+            u = -1.25+2.15*min(1,t*1.6)
+            pan = max(0,(t-.45)/.55)
+            focus_u = (shop['depth']-.6)*(1-pan)+1.7*pan
+            focus_v = shop['width']*.29*pan*(1 if shop['kind']=='cycle' else -1)
+            camera.fovy = 60
+            camera.position = rl.Vector3(shop['front']+shop['side']*u,1.55,-shop['center_y']+.22)
+            camera.target = rl.Vector3(shop['front']+shop['side']*focus_u,1.10,-shop['center_y']-focus_v)
         volume,pan = dog.play_bark(bark_event,camera)
         if args.verify and stage == 10 and dog.audio:
             assert rl.is_sound_playing(dog.sound),'Dog bark was not submitted to the audio device'
@@ -279,6 +319,8 @@ def main():
             status = 'SMOKING  |  Returns to idle when finished'
         if dog_focus or (args.verify and stage >= 9):
             status = 'INDIAN STREET DOG  |  '+dog.actor.mode.upper()
+        if shop_focus:
+            status = shop['name']+'  |  '+f"{shop['depth']:.1f}m DEEP"
         rl.draw_rectangle(12, rl.get_screen_height()-46, 490, 34, rl.Color(18, 24, 24, 225))
         rl.draw_text(status, 23, rl.get_screen_height()-37, 18, rl.RAYWHITE)
         if recording:

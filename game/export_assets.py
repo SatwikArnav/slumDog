@@ -65,6 +65,7 @@ else:
     scene = bpy.context.scene
     scene.frame_set(1)
     _,dog_obstacles = collect_navigation()
+    shops = json.loads(scene['expanded_shops'])
     collision = []
     for obj in list(scene.objects):
         if obj.name == 'Material metre coordinates':
@@ -85,9 +86,14 @@ else:
             bpy.ops.object.convert(target='MESH')
     prepare_environment(OUT)
     export('environment.glb')
-    metadata = {'collision': collision, 'spawn': [-.7, 0, 3.2],
-                'smoking_seconds': 215 / 24, 'stride_length': 1.2,
-                'dog_obstacles':dog_obstacles}
+    metadata = json.loads((OUT/'scene.json').read_text()) if (OUT/'scene.json').exists() else {}
+    metadata.update({'collision': collision, 'spawn': [-.7, 0, 3.2],
+                     'smoking_seconds': 215 / 24, 'stride_length': 1.1,
+                     'dog_obstacles':dog_obstacles,'shops':shops})
+    if '--environment-only' in sys.argv:
+        (OUT/'scene.json').write_text(json.dumps(metadata,separators=(',',':')))
+        print('GAME_ENVIRONMENT_EXPORTED',OUT,flush=True)
+        raise SystemExit(0)
 
 bpy.ops.wm.open_mainfile(filepath=str(ROOT / 'character' / 'Rook_Rebuilt.blend'))
 scene = bpy.context.scene
