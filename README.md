@@ -63,6 +63,9 @@ installation, Blender export, controls, and real-time rendering limitations.
 
 [Download the movement and smoking gameplay preview](game/previews/movement-preview.mp4).
 
+An [Indian street-dog NPC](game/README.md) roams, sniffs, and barks in the viewer.
+[Dog preview with sound](game/previews/indie-dog-preview.mp4).
+
 ## Credits and licensing
 
 Original project code is covered by the repository's [MIT license](LICENSE). Third-party assets retain their own licenses: MakeHuman graphical assets and Poly Haven assets are CC0; Noto Sans Devanagari uses the SIL Open Font License. See [CREDITS.md](CREDITS.md), the project-specific notes, and the bundled font license.

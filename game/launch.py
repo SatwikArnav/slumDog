@@ -41,6 +41,13 @@ def main():
             parser.error('Exported assets are missing. Install Blender 4.3.2 and add blender to PATH, '
                          'or use the prepared local-preview package, which includes the assets.')
         run([blender, '-b', '--python-exit-code', '1', '--python', HERE / 'export_assets.py'])
+    if any(not (HERE/'assets'/name).is_file() for name in ('dog.glb','dog_walk.glb','dog_bark.glb')):
+        blender = shutil.which('blender')
+        if not blender:
+            parser.error('Dog assets are missing. Pull the complete game branch or install Blender to rebuild them.')
+        run([blender,'-b','--python-exit-code','1','--python',HERE/'build_dog.py'])
+    if not (HERE/'assets/dog-bark.wav').is_file():
+        run([python,HERE/'make_bark.py'])
     run([python, '-m', 'unittest', 'discover', '-s', HERE, '-v'])
     if args.setup_only:
         print('Local setup complete. Run this launcher again to play.')

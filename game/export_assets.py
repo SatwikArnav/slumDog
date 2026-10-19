@@ -7,6 +7,7 @@ import bpy
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_walk import make_walk, sockets
 from bake_environment import prepare_environment
+from dog_navigation import collect_navigation
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'game' / 'assets'
@@ -60,8 +61,10 @@ if '--character-only' in sys.argv:
     metadata = json.loads((OUT / 'scene.json').read_text())
 else:
     bpy.ops.wm.open_mainfile(filepath=str(ROOT / 'environment' / 'Shanti_Nagar_Level.blend'))
+    bpy.data.collections['Collision'].hide_viewport = False
     scene = bpy.context.scene
     scene.frame_set(1)
+    _,dog_obstacles = collect_navigation()
     collision = []
     for obj in list(scene.objects):
         if obj.name == 'Material metre coordinates':
@@ -83,7 +86,8 @@ else:
     prepare_environment(OUT)
     export('environment.glb')
     metadata = {'collision': collision, 'spawn': [-.7, 0, 3.2],
-                'smoking_seconds': 215 / 24, 'stride_length': 1.2}
+                'smoking_seconds': 215 / 24, 'stride_length': 1.2,
+                'dog_obstacles':dog_obstacles}
 
 bpy.ops.wm.open_mainfile(filepath=str(ROOT / 'character' / 'Rook_Rebuilt.blend'))
 scene = bpy.context.scene

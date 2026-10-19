@@ -11,6 +11,7 @@ from state import Player
 from smoke import Smoke, texture_rgba, socket_at, world_socket
 from water import Water, HEIGHT
 from record_preview import Preview
+from dog import Dog
 
 HERE = Path(__file__).resolve().parent
 
@@ -60,10 +61,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--verify', action='store_true', help='Run scripted movement/smoke checks and capture frames')
     parser.add_argument('--record',metavar='MP4',help='Record a 20-second scripted gameplay preview (requires ffmpeg)')
+    parser.add_argument('--record-dog',metavar='MP4',help='Record the roaming dog with bark audio')
+    parser.add_argument('--mute',action='store_true',help='Disable live audio playback')
     args = parser.parse_args()
+    dog_focus = bool(args.record_dog)
+    if args.record_dog:
+        if args.record:
+            parser.error('Choose one recording mode')
+        args.record = args.record_dog
     if args.verify and args.record:
         parser.error('Use either --verify or --record')
-    for name in ('environment.glb', 'character.glb', 'walk.glb', 'scene.json'):
+    for name in ('environment.glb', 'character.glb', 'walk.glb', 'scene.json',
+                 'dog.glb','dog_walk.glb','dog_bark.glb','dog-bark.wav'):
         if not (HERE / 'assets' / name).is_file():
             parser.error('Missing exported assets. Run blender -b --python game/export_assets.py first.')
     config = json.loads((HERE / 'assets' / 'scene.json').read_text())
@@ -105,6 +114,7 @@ def main():
                     rl.gen_texture_mipmaps(ffi.addressof(surface,'texture'))
                     rl.set_texture_filter(surface.texture,rl.TEXTURE_FILTER_TRILINEAR)
                 filtered.add(surface.texture.id)
+    dog = Dog(HERE/'assets',config,shader,audio=not (args.mute or args.record))
     water = Water(environment,HERE / 'assets/environment.glb')
     reflection_location = rl.get_shader_location(shader,'reflectionPass')
     rl.set_shader_value(shader,rl.get_shader_location(shader,'waterHeight'),ffi.new('float *',HEIGHT),rl.SHADER_UNIFORM_FLOAT)
@@ -116,11 +126,13 @@ def main():
     stage = 0
     initial = (player.x, player.z)
     signatures = []
-    recording = Preview(args.record) if args.record else None
+    recording = Preview(args.record,dog_focus=dog_focus) if args.record else None
     while not rl.window_should_close():
         dt = 1/recording.fps if recording else min(rl.get_frame_time(), .05)
+        dog_bounds = [dog.actor.x-.22,dog.actor.z-.22,dog.actor.x+.22,dog.actor.z+.22]
+        obstacles = config['collision']+[dog_bounds]
         if recording:
-            player,yaw = recording.step(player,config)
+            player,yaw = recording.step(player,{**config,'collision':obstacles})
         elif args.verify:
             if stage == 1:
                 for _ in range(20):
@@ -153,7 +165,7 @@ def main():
             distance = max(1.3, min(5., distance - rl.get_mouse_wheel_move()*.3))
             player.step(dt, int(rl.is_key_down(rl.KEY_W))-int(rl.is_key_down(rl.KEY_S)),
                         int(rl.is_key_down(rl.KEY_D))-int(rl.is_key_down(rl.KEY_A)),
-                        yaw, rl.is_key_pressed(rl.KEY_E), config['collision'])
+                        yaw, rl.is_key_pressed(rl.KEY_E), obstacles)
             if rl.is_key_pressed(rl.KEY_R):
                 player = Player(x=config['spawn'][0], z=config['spawn'][2], duration=config['smoking_seconds'])
                 yaw = math.pi
@@ -173,11 +185,31 @@ def main():
                              4.9+i*.05 if stage == 4 else 7.0)
         else:
             smoke.update(dt, *anchors, player.yaw, player.smoke_time)
+        bark_event = dog.update(dt,player)
+        if args.verify and stage == 9:
+            travelled = 0.
+            for _ in range(200):
+                before = dog.actor.x,dog.actor.z
+                bark_event = dog.update(.025,player) or bark_event
+                travelled += math.dist(before,(dog.actor.x,dog.actor.z))
+            assert travelled > .5,'Dog did not roam in the live scene'
+        elif args.verify and stage == 10:
+            dog.actor.cooldown = dog.actor.ambient = 0
+            assert dog.update(.025,player),'Dog did not trigger a bark'
+            for _ in range(7):
+                dog.update(.05,player)
+            bark_event = True
+            assert dog.actor.mode == 'bark'
         # Follow camera with a ray against the environment to avoid crossing walls.
         target = rl.Vector3(player.x, 1.35, player.z)
         view_yaw = player.yaw+1.15 if args.verify and stage >= 1 else yaw
-        offset = rl.Vector3(-math.sin(view_yaw)*math.cos(pitch)*distance,
-                            .45+math.sin(pitch)*distance, -math.cos(view_yaw)*math.cos(pitch)*distance)
+        camera_distance = distance
+        if dog_focus:
+            target = rl.Vector3(dog.actor.x,.38,dog.actor.z)
+            view_yaw = dog.actor.yaw+1.05
+            camera_distance = 1.8
+        offset = rl.Vector3(-math.sin(view_yaw)*math.cos(pitch)*camera_distance,
+                            .45+math.sin(pitch)*camera_distance, -math.cos(view_yaw)*math.cos(pitch)*camera_distance)
         length = math.sqrt(offset.x**2+offset.y**2+offset.z**2)
         direction = rl.Vector3(offset.x/length, offset.y/length, offset.z/length)
         safe = length
@@ -189,9 +221,20 @@ def main():
         camera.target = target
         camera.position = rl.Vector3(target.x+direction.x*safe, target.y+direction.y*safe,
                                      target.z+direction.z*safe)
-        if args.verify and stage >= 7:
+        if args.verify and 7 <= stage <= 8:
             camera.position = rl.Vector3(1.2 if stage == 7 else .15,.68,1.0)
             camera.target = rl.Vector3(.665,HEIGHT,-.307)
+        elif args.verify and stage >= 9:
+            angle = dog.actor.yaw+math.pi/2
+            camera.target = rl.Vector3(dog.actor.x,.38,dog.actor.z)
+            camera.position = rl.Vector3(dog.actor.x-math.sin(angle)*1.5,1.0,
+                                         dog.actor.z-math.cos(angle)*1.5)
+        volume,pan = dog.play_bark(bark_event,camera)
+        if args.verify and stage == 10 and dog.audio:
+            assert rl.is_sound_playing(dog.sound),'Dog bark was not submitted to the audio device'
+            print('DOG_BARK_PLAYBACK_OK',flush=True)
+        if bark_event and recording:
+            recording.bark(volume,pan)
         # Mirror only surfaces above the puddle plane; the ground must not hide
         # the reflected buildings, and water must not reflect itself recursively.
         rl.set_shader_value(shader,reflection_location,ffi.new('int *',1),rl.SHADER_UNIFORM_INT)
@@ -199,6 +242,7 @@ def main():
         water.draw_environment()
         rl.draw_model_ex(character,rl.Vector3(player.x,0,player.z),rl.Vector3(0,1,0),
                          math.degrees(player.yaw),rl.Vector3(1,1,1),rl.WHITE)
+        dog.draw()
         water.end_reflection()
         rl.set_shader_value(shader,reflection_location,ffi.new('int *',0),rl.SHADER_UNIFORM_INT)
         rl.begin_drawing()
@@ -207,6 +251,7 @@ def main():
         water.draw_environment()
         rl.draw_model_ex(character, rl.Vector3(player.x, 0, player.z), rl.Vector3(0, 1, 0),
                          math.degrees(player.yaw), rl.Vector3(1, 1, 1), rl.WHITE)
+        dog.draw()
         water.draw(camera,recording.time if recording else rl.get_time())
         # Depth-test against the street, but do not let transparent puffs occlude
         # each other. Back-to-front sorting gives stable alpha compositing.
@@ -230,6 +275,8 @@ def main():
         status = ('WALKING' if player.walk_weight > .1 else 'IDLE')+'  |  Press E to smoke'
         if player.smoke_time is not None:
             status = 'SMOKING  |  Returns to idle when finished'
+        if dog_focus or (args.verify and stage >= 9):
+            status = 'INDIAN STREET DOG  |  '+dog.actor.mode.upper()
         rl.draw_rectangle(12, rl.get_screen_height()-46, 490, 34, rl.Color(18, 24, 24, 225))
         rl.draw_text(status, 23, rl.get_screen_height()-37, 18, rl.RAYWHITE)
         if recording:
@@ -261,14 +308,15 @@ def main():
                     signature.update(ffi.buffer(mesh.animVertices,mesh.vertexCount*3*4))
             signatures.append(signature.digest())
             stage += 1
-            if stage == 9:
+            if stage == 11:
                 assert len(set(signatures)) > 1, 'Character vertices did not animate'
                 assert signatures[1] != signatures[2], 'Walk poses did not change'
                 assert signatures[3] != signatures[0], 'Smoking pose did not change'
-                print('GAME_VERIFY_OK: walk, smoke -> idle, puddle reflection and resize, nine captures', flush=True)
+                print('GAME_VERIFY_OK: player, puddles, roaming dog and bark, eleven captures', flush=True)
                 break
     if recording:
         recording.close()
+    dog.close()
     rl.unload_model_animations(animations, count[0])
     rl.unload_model_animations(walks, walk_count[0])
     rl.unload_texture(smoke_texture)
