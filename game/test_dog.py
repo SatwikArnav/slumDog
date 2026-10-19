@@ -63,6 +63,9 @@ class StreetDogChecks(unittest.TestCase):
                 size,_ = struct.unpack('<II',f.read(8))
                 binary = f.read(size)
             self.assertGreater(len(gltf['meshes']),3)
+            coat = next(m for m in gltf['materials'] if m['name']=='Short fawn coat with white bib')
+            texture = gltf['textures'][coat['pbrMetallicRoughness']['baseColorTexture']['index']]
+            self.assertIn('bufferView',gltf['images'][texture['source']], 'Coat must ship inside the GLB')
             self.assertEqual(len(gltf['animations']),1)
             counts.append(len(gltf['skins'][0]['joints']))
             targets = {gltf['nodes'][c['target']['node']]['name'] for c in gltf['animations'][0]['channels']}

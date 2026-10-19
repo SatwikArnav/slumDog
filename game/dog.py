@@ -18,8 +18,14 @@ class Dog:
             if not count[0] or not rl.is_model_animation_valid(self.model,clips[0]):
                 raise RuntimeError('Street dog animation failed: '+name)
             self.clips[name] = clips,count[0]
+        filtered = set()
         for i in range(self.model.materialCount):
             self.model.materials[i].shader = shader
+            surface = self.model.materials[i].maps[rl.MATERIAL_MAP_ALBEDO]
+            if surface.texture.id not in filtered and surface.texture.width > 1:
+                rl.gen_texture_mipmaps(ffi.addressof(surface,'texture'))
+                rl.set_texture_filter(surface.texture,rl.TEXTURE_FILTER_TRILINEAR)
+                filtered.add(surface.texture.id)
         self.audio = False
         self.sound = None
         if audio:
