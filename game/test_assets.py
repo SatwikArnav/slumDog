@@ -15,6 +15,9 @@ class ExportChecks(unittest.TestCase):
         report = json.loads((Path(__file__).parent/'assets/walk_validation.json').read_text())
         self.assertLess(report['max_ankle_error'],.005,'Foot targets exceed leg reach')
         self.assertGreater(report['min_foot_separation'],.16,'Feet cross during the stride')
+        self.assertGreater(report['checked_hand_vertices'],100)
+        self.assertGreaterEqual(report['min_hand_leg_clearance'],.04,
+                                'Palm or fingers come within 4 cm of the clothed legs')
         frames = report['frames']
         for name in frames[0]:
             points = [f[name] for f in frames]

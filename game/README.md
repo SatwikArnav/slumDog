@@ -98,7 +98,10 @@ blender -b --python-exit-code 1 --python game/export_assets.py -- --character-on
 
 `game/assets/walk_validation.json` records sampled limb positions, ankle tracking
 error, and foot separation. Tests reject overextended legs, crossed feet, abrupt
-limb position changes, and discontinuous loops.
+limb position changes, and discontinuous loops. The full palm/finger surfaces are
+also checked against the deformed trouser surfaces at every authored pose; the
+walk must maintain at least 4 cm of signed clearance. Shoulder and forearm angles
+keep the hand swing outside the thighs.
 
 Lighting uses a simple directional shader; Blender's full lighting, general
 material reflections, normal/bump networks and volume fields are not reproduced.
