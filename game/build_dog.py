@@ -47,60 +47,127 @@ def segment(name,a,b,radius,parts):
     return o
 
 
-# Cross-sections follow the rib cage, loin tuck and sloping croup instead
-# of overlapping round primitives that produce a toy-like barrel torso.
-rings = [(.37,.49,.42,.035),(.29,.55,.385,.095),(.16,.565,.355,.092),
-         (-.015,.58,.292,.120),(-.18,.575,.265,.123),(-.28,.535,.335,.065)]
-vertices,faces = [],[]
-for y,top,bottom,width in rings:
-    for i in range(24):
-        angle = math.tau*i/24
-        vertices.append((width*math.sin(angle),y,(top+bottom)/2+(top-bottom)/2*math.cos(angle)))
-for j in range(len(rings)-1):
-    for i in range(24):
-        a,b = j*24+i,j*24+(i+1)%24
-        faces.append((a,b,b+24,a+24))
-faces.extend([tuple(reversed(range(24))),tuple(range((len(rings)-1)*24,len(rings)*24))])
-mesh = bpy.data.meshes.new('Anatomical torso')
-mesh.from_pydata(vertices,[],faces)
-body = bpy.data.objects.new('Rib cage and tucked loin',mesh)
-scene.collection.objects.link(body)
-skin_parts.append(body)
-neck = ellipsoid('Sloping neck',(0,-.29,.52),(.084,.105,.133),skin_parts)
-neck.rotation_euler.x = .48
-ellipsoid('Wedge skull',(0,-.43,.615),(.084,.112,.075),skin_parts)
-ellipsoid('Long tapered muzzle',(0,-.558,.563),(.053,.119,.043),skin_parts)
-ellipsoid('Cheeks',(0,-.465,.56),(.074,.078,.055),skin_parts)
+def loft(name, rings, parts=None, subdivision=2):
+    """Smooth anatomical sections along Y: (y, centre_z, half_width, half_height)."""
+    vertices,faces = [],[]
+    count = 20
+    for y,z,w,h in rings:
+        for i in range(count):
+            angle = math.tau*i/count
+            vertices.append((w*math.sin(angle),y,z+h*math.cos(angle)))
+    for j in range(len(rings)-1):
+        for i in range(count):
+            a,b = j*count+i,j*count+(i+1)%count
+            faces.append((a,b,b+count,a+count))
+    faces.extend([tuple(reversed(range(count))),tuple(range((len(rings)-1)*count,len(rings)*count))])
+    mesh = bpy.data.meshes.new(name)
+    mesh.from_pydata(vertices,[],faces)
+    o = bpy.data.objects.new(name,mesh)
+    scene.collection.objects.link(o)
+    bpy.context.view_layer.objects.active = o
+    o.select_set(True)
+    # Recalculate normals before remeshing: section winding depends on direction.
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.normals_make_consistent(inside=False)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    sub = o.modifiers.new('Anatomical curves','SUBSURF')
+    sub.levels = subdivision
+    bpy.ops.object.modifier_apply(modifier=sub.name)
+    if parts is not None:
+        parts.append(o)
+    o.select_set(False)
+    return o
 
-bones = {'root':((0,.30,.43),(0,-.23,.43),None),
-         'neck':((0,-.23,.45),(0,-.36,.57),'root'),
-         'head':((0,-.36,.57),(0,-.54,.60),'neck'),
-         'jaw':((0,-.445,.535),(0,-.61,.505),'head')}
+
+def tube(name, points, radii, parts):
+    vertices,faces = [],[]
+    for j,p in enumerate(points):
+        p = Vector(p)
+        tangent = Vector(points[min(j+1,len(points)-1)])-Vector(points[max(0,j-1)])
+        across = tangent.cross(Vector((1,0,0))).normalized()
+        for i in range(16):
+            angle = i*math.tau/16
+            vertices.append(p+radii[j]*(Vector((1,0,0))*math.cos(angle)+across*math.sin(angle)))
+    for j in range(len(points)-1):
+        for i in range(16):
+            a,b = j*16+i,j*16+(i+1)%16
+            faces.append((a,b,b+16,a+16))
+    faces.extend([tuple(reversed(range(16))),tuple(range((len(points)-1)*16,len(points)*16))])
+    mesh = bpy.data.meshes.new(name)
+    mesh.from_pydata(vertices,[],faces)
+    o = bpy.data.objects.new(name,mesh)
+    scene.collection.objects.link(o)
+    bpy.context.view_layer.objects.active = o
+    bpy.ops.object.select_all(action='DESELECT')
+    o.select_set(True)
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.normals_make_consistent(inside=False)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    sub = o.modifiers.new('Tapered contours','SUBSURF')
+    sub.levels = 2
+    bpy.ops.object.modifier_apply(modifier=sub.name)
+    parts.append(o)
+    return o
+
+
+loft('Ribcage, loin and croup',[
+    (.36,.455,.018,.025),(.31,.46,.079,.080),(.23,.458,.095,.092),
+    (.12,.454,.088,.093),(.015,.425,.107,.125),(-.10,.415,.116,.145),
+    (-.20,.416,.106,.143),(-.28,.428,.071,.102),(-.31,.46,.025,.035)],skin_parts)
+loft('Sloping muscular neck',[
+    (-.22,.467,.070,.082),(-.27,.50,.090,.11),(-.32,.545,.079,.108),
+    (-.38,.585,.065,.084),(-.43,.606,.058,.063)],skin_parts)
+# Forehead, stop, nasal bridge and tapered upper muzzle are one continuous wedge.
+loft('Canine skull and nasal bridge',[
+    (-.355,.618,.025,.025),(-.39,.635,.069,.063),(-.435,.636,.079,.068),
+    (-.48,.627,.073,.057),(-.515,.606,.057,.041),(-.55,.596,.050,.033),
+    (-.61,.584,.039,.025),(-.659,.580,.030,.021),(-.672,.581,.018,.012)],skin_parts)
+for side in (-1,1):
+    ellipsoid('Masseter cheek',(side*.048,-.451,.587),(.029,.052,.038),skin_parts)
+    brow = ellipsoid('Brow ridge',(side*.059,-.486,.650),(.022,.034,.014),skin_parts)
+    brow.rotation_euler.y = side*.25
+
+bones = {'root':((0,.28,.445),(0,-.23,.445),None),
+         'neck':((0,-.23,.465),(0,-.365,.595),'root'),
+         'head':((0,-.365,.595),(0,-.54,.612),'neck'),
+         'jaw':((0,-.448,.572),(0,-.625,.553),'head')}
+for label,side in [('L',1),('R',-1)]:
+    bones['ear'+label] = ((side*.054,-.414,.670),(side*.085,-.403,.79),'head')
 feet = {}
-for side,x in [('L',.115),('R',-.115)]:
+for side,x in [('L',.091),('R',-.091)]:
     for end,y in [('F',-.22),('H',.26)]:
         name = end+side
-        hip = (x,y,.46)
-        elbow = (x,y+.055 if end=='F' else y-.12,.26 if end=='F' else .29)
-        ankle = (x,-.275 if end=='F' else .32,.065 if end=='F' else .12)
-        toe = (x,-.355 if end=='F' else .205,.035)
-        segment(name+' upper',hip,elbow,.039 if end=='F' else .058,skin_parts)
-        segment(name+' lower',elbow,ankle,.025 if end=='F' else .032,skin_parts)
-        segment(name+' pastern',ankle,toe,.024,skin_parts)
-        ellipsoid(name+' paw',(x,toe[1]-.015,.034),(.034,.051,.028),skin_parts)
+        hip = (x,y,.465)
+        elbow = (x,-.18 if end=='F' else .135,.295 if end=='F' else .315)
+        ankle = (x,-.245 if end=='F' else .305,.070 if end=='F' else .145)
+        toe = (x,-.285 if end=='F' else .265,.028)
+        # Shoulders merge into the chest; thighs taper into defined stifles/hocks.
+        tube(name+' muscle and tendon',[hip,tuple(Vector(hip)*.55+Vector(elbow)*.45),elbow,
+                                       tuple(Vector(elbow)*.45+Vector(ankle)*.55),ankle,toe],
+             [.048 if end=='F' else .061,.041 if end=='F' else .052,
+              .027 if end=='F' else .032,.019,.017,.022],skin_parts)
+        ellipsoid(name+' paw',(x,toe[1]-.018,.027),(.031,.046,.024),skin_parts)
         bones[name+'_upper'] = (hip,elbow,'root')
         bones[name+'_lower'] = (elbow,ankle,name+'_upper')
         bones[name+'_paw'] = (ankle,toe,name+'_lower')
         feet[name] = ankle
-tail = [(0,.35,.47),(0,.48,.53),(0,.57,.62),(0,.59,.70),(0,.55,.75),(0,.49,.745)]
+tail = [(0,.32,.49),(0,.42,.535),(0,.515,.62),(0,.54,.715),(0,.50,.77),(0,.445,.765)]
+tube('Continuous tapered sickle tail',tail,[.028,.023,.018,.013,.008,.002],skin_parts)
 for i,(a,b) in enumerate(zip(tail,tail[1:])):
-    segment('Curved tail',a,b,.027-i*.004,skin_parts)
     bones['tail'+str(i)] = (a,b,'root' if i==0 else 'tail'+str(i-1))
 
+
 def anatomy(point):
-    # Adult pariah proportions: longer distal limbs, lean torso and raised withers.
     x,y,z = point
-    return Vector((x,y,z+.105*min(1,max(0,(z-.055)/.35))))
+    # The adult Indie muzzle is roughly half the head length; shortening the
+    # nasal section and pinnae avoids the previous jackal-like proportions.
+    if y < -.51:
+        y = -.51+(y+.51)*.76
+    if y < -.33 and z > .68:
+        z = .68+(z-.68)*.74
+    return Vector((x,y,z))
 
 
 for o in skin_parts:
@@ -122,13 +189,13 @@ skin.name = 'Indie | continuous short-coat skin'
 bpy.ops.object.transform_apply(location=True,rotation=True,scale=True)
 remesh = skin.modifiers.new('Joined anatomical surface','REMESH')
 remesh.mode = 'VOXEL'
-remesh.voxel_size = .006
+remesh.voxel_size = .0045
 bpy.ops.object.modifier_apply(modifier=remesh.name)
 smooth = skin.modifiers.new('Soft anatomy','SMOOTH')
 smooth.factor,smooth.iterations = .7,3
 bpy.ops.object.modifier_apply(modifier=smooth.name)
 decimate = skin.modifiers.new('Game surface','DECIMATE')
-decimate.ratio = .65
+decimate.ratio = .42
 bpy.ops.object.modifier_apply(modifier=decimate.name)
 
 rig_data = bpy.data.armatures.new('Street dog skeleton')
@@ -179,9 +246,9 @@ def distance(point,a,b):
 
 groups = {name:skin.vertex_groups.new(name=name) for name in bones}
 for v in skin.data.vertices:
-    if v.co.y > .40 and v.co.z > .59:
+    if v.co.y > .38 and v.co.z > .51:
         names = [n for n in bones if n.startswith('tail')]
-    elif v.co.y < -.38 and v.co.z > .52:
+    elif v.co.y < -.37 and v.co.z > .52:
         names = ['head','neck']
     else:
         names = [n for n in bones if n!='jaw']
@@ -214,15 +281,21 @@ skin.data.materials.append(coat)
 colors = skin.data.color_attributes.new(name='Coat',type='FLOAT_COLOR',domain='POINT')
 for v,c in zip(skin.data.vertices,colors.data):
     x,y,z = v.co
-    # Muted sable fawn, darker along the back and cheeks, cream underparts.
-    grain = noise.noise_vector(v.co*31)[0]
-    edge = .012*grain
-    bib = y < -.15 and z < .51+edge and abs(x)<.085+edge
-    white = z < .077+edge or bib or (y < -.51 and z < .66+edge)
-    dorsal = max(0,min(1,(z-.54)/.16))*max(0,min(1,(y+.38)*5))
-    base = (.59,.52,.40) if white else tuple(a*(1-.36*dorsal) for a in (.33,.173,.069))
-    variation = .93+.07*noise.noise_vector(v.co*17)[1]
-    c.color = (*[channel*variation for channel in base],1)
+    # Warm dusty fawn with a subtle sable saddle and naturally broken cream markings.
+    grain = noise.noise_vector(v.co*24)[0]
+    edge = .009*grain
+    bib = y < -.19 and z < .465+edge and abs(x)<.091+edge
+    sock_height = .075 if x>0 else .095
+    white = z < sock_height+edge or bib or (y < -.51 and z < .584+edge)
+    blaze = abs(x)<.010+edge*.3 and -.57<y<-.465 and z>.622
+    flank = x<-.06 and ((y-.21)/.085)**2+((z-.395)/.07)**2 < .7+grain*.2
+    white = white or blaze or flank
+    dorsal = max(0,min(1,(z-.425)/.12))*max(0,min(1,(y+.32)*8))
+    base = (.60,.53,.41) if white else tuple(a*(1-.60*dorsal) for a in (.42,.235,.11))
+    # Face mask follows the muzzle/eye socket, rather than a cartoon black nose dot.
+    mask = max(0,min(1,(-y-.52)/.14))*.52 if z>.566 else 0
+    variation = .88+.12*noise.noise_vector(v.co*19)[1]
+    c.color = (*[channel*variation*(1-mask) for channel in base],1)
 for face in skin.data.polygons:
     face.use_smooth = True
 armature = skin.modifiers.new('Skin','ARMATURE')
@@ -243,35 +316,75 @@ def attached(o,bone,mat):
         face.use_smooth = True
 
 
-black = material('Wet black nose and lips',(.009,.007,.006),.28)
-eye_mat = material('Warm brown eyes',(.025,.014,.006),.15)
-inner = material('Warm inner ear',(.20,.085,.045))
-tan = material('Fawn ears and jaw',(.33,.173,.069))
-cream = material('Cream chin',(.52,.45,.34))
-pink = material('Tongue',(.42,.12,.13),.5)
-attached(ellipsoid('Black nose',(0,-.670,.563),(.032,.019,.021)),'head',black)
+black = material('Wet black nose and lips',(.012,.009,.007),.23)
+eye_mat = material('Amber brown iris',(.095,.044,.012),.17)
+pupil_mat = material('Deep brown pupil',(.004,.003,.002),.12)
+inner = material('Ear concha',(.12,.054,.030))
+tan = material('Fawn ears',(.36,.185,.078))
+cream = material('Cream chin',(.53,.45,.33))
+pink = material('Tongue',(.34,.075,.085),.5)
+ivory = material('Small ivory teeth',(.62,.56,.43),.4)
+# A broad triangular nose, paired nostrils, philtrum and restrained lip line.
+nose = ellipsoid('Nose leather',(0,-.671,.582),(.032,.019,.021))
+for v in nose.data.vertices:
+    v.co.x *= .85+.15*(v.co.z/.021)
+attached(nose,'head',black)
 for side in (-1,1):
-    attached(ellipsoid('Eye socket',(side*.076,-.488,.627),(.012,.019,.013)),'head',tan)
-    attached(ellipsoid('Brown almond eye',(side*.084,-.497,.627),(.009,.013,.0085)),'head',eye_mat)
-    vertices = [(side*.032,-.43,.665),(side*.12,-.395,.66),(side*.107,-.425,.782),
-                (side*.074,-.477,.676),(side*.073,-.414,.681)]
-    mesh = bpy.data.meshes.new('Upright ear')
-    mesh.from_pydata(vertices,[],[(0,1,2),(0,2,3),(1,4,2),(0,4,1),(0,3,4),(2,4,3)])
-    ear = bpy.data.objects.new('Upright triangular ear',mesh)
+    attached(ellipsoid('Nostril',(side*.019,-.686,.586),(.009,.004,.006)),'head',pupil_mat)
+    # Eyes sit in slanted sockets, with a narrow eyelid rather than exposed spheres.
+    socket = ellipsoid('Dark eyelid',(side*.067,-.490,.636),(.012,.022,.011))
+    socket.rotation_euler.z = side*.45
+    attached(socket,'head',black)
+    attached(ellipsoid('Amber iris',(side*.074,-.498,.637),(.007,.011,.007)),'head',eye_mat)
+    attached(ellipsoid('Pupil',(side*.077,-.503,.638),(.004,.006,.005)),'head',pupil_mat)
+    # Cupped pinnae: curved rim, recessed concha, thin back, and a rounded tip.
+    rows = [(0,.045,.023),(.025,.048,.031),(.070,.037,.024),(.112,.021,.012),(.139,.002,.001)]
+    vertices,faces = [],[]
+    for height,width,depth in rows:
+        for i in range(9):
+            u = -1+2*i/8
+            vertices.append((side*(.054+.25*height+u*width),
+                             -.414+.11*height-depth*(1-u*u),.670+height-.008*u))
+    for j in range(len(rows)-1):
+        for i in range(8):
+            a = j*9+i
+            faces.append((a,a+1,a+10,a+9))
+    mesh = bpy.data.meshes.new('Cupped ear')
+    mesh.from_pydata(vertices,[],faces)
+    ear = bpy.data.objects.new('Thin curved pinna',mesh)
     scene.collection.objects.link(ear)
-    bevel = ear.modifiers.new('Soft ear rim','BEVEL')
-    bevel.width,bevel.segments = .006,3
     bpy.context.view_layer.objects.active = ear
-    bpy.ops.object.modifier_apply(modifier=bevel.name)
-    attached(ear,'head',tan)
-    mesh = bpy.data.meshes.new('Ear inset')
-    mesh.from_pydata([(side*.052,-.449,.681),(side*.094,-.451,.689),(side*.101,-.438,.750)],[],[(0,1,2)])
-    ear = bpy.data.objects.new('Dark inner ear',mesh)
-    scene.collection.objects.link(ear)
-    attached(ear,'head',inner)
-attached(ellipsoid('Lower jaw',(0,-.55,.504),(.046,.10,.021)),'jaw',cream)
-attached(ellipsoid('Lower lip',(0,-.56,.524),(.046,.100,.004)),'jaw',black)
-attached(ellipsoid('Tongue',(0,-.585,.532),(.026,.045,.004)),'jaw',pink)
+    sub = ear.modifiers.new('Soft pinna','SUBSURF')
+    sub.levels = 2
+    bpy.ops.object.modifier_apply(modifier=sub.name)
+    solid = ear.modifiers.new('Ear thickness','SOLIDIFY')
+    solid.thickness = .004
+    bpy.ops.object.modifier_apply(modifier=solid.name)
+    attached(ear,'earL' if side==1 else 'earR',tan)
+    ear.data.materials.append(inner)
+    for face in ear.data.polygons:
+        centre = face.center
+        if .69<centre.z<.77 and abs(abs(centre.x)-.075)<.018:
+            face.material_index = 1
+jaw = loft('Tapered lower jaw',[
+    (-.44,.555,.043,.019),(-.48,.548,.046,.017),(-.54,.548,.039,.013),
+    (-.61,.553,.028,.009),(-.651,.560,.020,.006)])
+attached(jaw,'jaw',cream)
+attached(ellipsoid('Lower lip',(0,-.565,.563),(.037,.084,.003)),'jaw',black)
+attached(ellipsoid('Mouth cavity',(0,-.541,.567),(.035,.072,.004)),'head',black)
+attached(ellipsoid('Tongue',(0,-.575,.566),(.021,.042,.004)),'jaw',pink)
+for side in (-1,1):
+    for y,z,radius,length in [(-.608,.567,.004,.012),(-.502,.565,.004,.008)]:
+        bpy.ops.mesh.primitive_cone_add(vertices=12,radius1=.001,radius2=radius,depth=length,
+                                        location=(side*.028,y,z-length/2))
+        attached(bpy.context.object,'head',ivory)
+    # Separate small toe lobes/claws make the feet read as paws, not white shoes.
+    for end in ('F','H'):
+        bone = end+('L' if side==1 else 'R')+'_paw'
+        x,y,z = bones[bone][1]
+        for offset in (-.017,0,.017):
+            attached(ellipsoid('Toe',(x+offset,y-.040,.023),(.011,.018,.015)),bone,cream)
+            attached(ellipsoid('Small claw',(x+offset,y-.054,.019),(.0035,.008,.004)),bone,black)
 
 # Bake fine, directional short-coat colour into a portable texture; raylib
 # cannot interpret Blender procedural shader nodes.
@@ -288,14 +401,14 @@ attr = next(n for n in nodes if n.type=='VERTEX_COLOR')
 coord = nodes.new('ShaderNodeTexCoord')
 scale = nodes.new('ShaderNodeVectorMath')
 scale.operation = 'MULTIPLY'
-scale.inputs[1].default_value = (650,95,650)
+scale.inputs[1].default_value = (480,65,480)
 links.new(coord.outputs['Generated'],scale.inputs[0])
 fibres = nodes.new('ShaderNodeTexNoise')
 fibres.inputs['Scale'].default_value = 1
 fibres.inputs['Detail'].default_value = 2
 links.new(scale.outputs[0],fibres.inputs['Vector'])
 ramp = nodes.new('ShaderNodeValToRGB')
-ramp.color_ramp.elements[0].color = (.65,.65,.65,1)
+ramp.color_ramp.elements[0].color = (.48,.48,.48,1)
 ramp.color_ramp.elements[1].color = (1.12,1.12,1.12,1)
 links.new(fibres.outputs['Fac'],ramp.inputs[0])
 mix = nodes.new('ShaderNodeMixRGB')
@@ -304,7 +417,15 @@ mix.inputs[0].default_value = 1
 links.new(attr.outputs['Color'],mix.inputs[1])
 links.new(ramp.outputs[0],mix.inputs[2])
 emission = nodes.new('ShaderNodeEmission')
-links.new(mix.outputs[0],emission.inputs[0])
+ao = nodes.new('ShaderNodeAmbientOcclusion')
+ao.inputs['Distance'].default_value = .12
+ao.samples = 16
+shade = nodes.new('ShaderNodeMixRGB')
+shade.blend_type = 'MULTIPLY'
+shade.inputs[0].default_value = .72
+links.new(mix.outputs[0],shade.inputs[1])
+links.new(ao.outputs['Color'],shade.inputs[2])
+links.new(shade.outputs[0],emission.inputs[0])
 output = nodes.get('Material Output')
 links.new(emission.outputs[0],output.inputs['Surface'])
 texture = bpy.data.images.new('Indie short sable coat',width=2048,height=2048)
@@ -318,13 +439,32 @@ bpy.ops.object.bake(type='EMIT')
 texture.pack()
 links.new(shader.outputs[0],output.inputs['Surface'])
 links.new(target.outputs['Color'],shader.inputs['Base Color'])
+# Tangent-space hair relief survives export as a normal map. Colour-only grain
+# disappears in motion and leaves the silhouette looking like polished clay.
+bump = nodes.new('ShaderNodeBump')
+bump.inputs['Strength'].default_value = .32
+bump.inputs['Distance'].default_value = .002
+links.new(fibres.outputs['Fac'],bump.inputs['Height'])
+links.new(bump.outputs['Normal'],shader.inputs['Normal'])
+normal_image = bpy.data.images.new('Short coat micro normals',width=2048,height=2048)
+normal_image.colorspace_settings.name = 'Non-Color'
+normal_target = nodes.new('ShaderNodeTexImage')
+normal_target.image = normal_image
+nodes.active = normal_target
+bpy.ops.object.bake(type='NORMAL')
+normal_image.pack()
+normal_map = nodes.new('ShaderNodeNormalMap')
+links.new(normal_target.outputs['Color'],normal_map.inputs['Color'])
+links.new(normal_map.outputs['Normal'],shader.inputs['Normal'])
 # Baked colours already include the vertex markings.
 skin.data.color_attributes.remove(colors)
 
 base = {p.name:p.matrix_basis.copy() for p in rig.pose.bones}
 world_rest = {p.name:p.matrix.copy() for p in rig.pose.bones}
 controls = {n:rig.pose.bones['CTRL_'+n].matrix.copy() for n in feet}
+validation = {}
 for mode,frames,fps in [('idle',97,32),('walk',49,48),('bark',25,32)]:
+    ankle_error = 0.
     rig.animation_data_clear()
     rig.animation_data_create()
     rig.animation_data.action = bpy.data.actions.new('Indie '+mode)
@@ -336,19 +476,21 @@ for mode,frames,fps in [('idle',97,32),('walk',49,48),('bark',25,32)]:
             p.matrix_basis = base[p.name].copy()
             p.rotation_mode = 'XYZ'
         root = rig.pose.bones['root']
-        root.location.z = -.008+.003*math.cos(phase*math.tau*2) if mode=='walk' else .002*math.sin(phase*math.tau)
+        root.location.z = -.014+.003*math.cos(phase*math.tau*2) if mode=='walk' else .002*math.sin(phase*math.tau)
         if mode == 'walk':
             for name,offset in [('HL',0),('FL',.25),('HR',.5),('FR',.75)]:
                 t = (phase+offset)%1
                 if t < .62:
-                    forward,lift = -.1488+.48*t,0
+                    forward,lift = -.1178+.38*t,0
                 else:
                     u = (t-.62)/.38
-                    forward = .1488-.2976*u*u*(3-2*u)
-                    lift = .045*math.sin(math.pi*u)**1.5
+                    forward = .1178 + .1444*u - 1.14*u*u + .76*u*u*u
+                    lift = .035*math.sin(math.pi*u)**1.5
                 p = rig.pose.bones['CTRL_'+name]
                 p.matrix = Matrix.Translation(Vector((0,forward,lift))) @ controls[name]
                 p.keyframe_insert('location',frame=frame)
+            rig.pose.bones['neck'].rotation_euler.x = .028*math.sin(phase*math.tau*2)
+            rig.pose.bones['head'].rotation_euler.x = -.018*math.sin(phase*math.tau*2)
         elif mode == 'idle':
             rig.pose.bones['neck'].rotation_euler.x = -.20*math.sin(phase*math.pi)**4
             rig.pose.bones['head'].rotation_euler.x = -.28*math.sin(phase*math.pi)**4
@@ -363,11 +505,18 @@ for mode,frames,fps in [('idle',97,32),('walk',49,48),('bark',25,32)]:
                                            Matrix.Rotation(.55*pulse,4,'X') @
                                            Matrix.Translation(-hinge) @ world_rest['jaw'])
         rig.pose.bones['tail0'].rotation_euler.z = .12*math.sin(phase*math.tau)
+        for i,label in enumerate(('L','R')):
+            rig.pose.bones['ear'+label].rotation_euler.x = .045*math.sin(phase*math.tau*(2 if mode=='walk' else 1)+i*.4)
         for p in rig.pose.bones:
             if not p.name.startswith(('CTRL_','POLE_')):
                 for prop in ('location','rotation_euler'):
                     p.keyframe_insert(prop,frame=frame)
         bpy.context.view_layer.update()
+        for name in feet:
+            ankle_error = max(ankle_error,(rig.pose.bones[name+'_lower'].tail-
+                                          rig.pose.bones['CTRL_'+name].head).length)
+    validation[mode] = {'sampled_frames':frames,'maximum_ankle_target_error_m':ankle_error}
+    assert ankle_error < .015, f'{mode}: paw misses ground trajectory by {ankle_error:.4f}m'
     scene.frame_set(1)
     for curve in rig.animation_data.action.fcurves:
         for point in curve.keyframe_points:
@@ -377,3 +526,4 @@ for mode,frames,fps in [('idle',97,32),('walk',49,48),('bark',25,32)]:
                               export_anim_scene_split_object=False,export_force_sampling=True,
                               export_bake_animation=True,export_morph=False)
 print('INDIE_DOG_EXPORTED',len(skin.data.vertices),'skin vertices',flush=True)
+(OUT/'dog_validation.json').write_text(json.dumps(validation,indent=2)+'\n')

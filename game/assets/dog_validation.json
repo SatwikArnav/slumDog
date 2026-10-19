@@ -1,0 +1,14 @@
+{
+  "idle": {
+    "sampled_frames": 97,
+    "maximum_ankle_target_error_m": 1.4485584270375655e-07
+  },
+  "walk": {
+    "sampled_frames": 49,
+    "maximum_ankle_target_error_m": 1.4994004217906377e-07
+  },
+  "bark": {
+    "sampled_frames": 25,
+    "maximum_ankle_target_error_m": 1.3286288455223297e-07
+  }
+}

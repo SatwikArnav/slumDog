@@ -114,7 +114,7 @@ def main():
                     rl.gen_texture_mipmaps(ffi.addressof(surface,'texture'))
                     rl.set_texture_filter(surface.texture,rl.TEXTURE_FILTER_TRILINEAR)
                 filtered.add(surface.texture.id)
-    dog = Dog(HERE/'assets',config,shader,audio=not (args.mute or args.record))
+    dog = Dog(HERE/'assets',config,VERTEX,audio=not (args.mute or args.record))
     water = Water(environment,HERE / 'assets/environment.glb')
     reflection_location = rl.get_shader_location(shader,'reflectionPass')
     rl.set_shader_value(shader,rl.get_shader_location(shader,'waterHeight'),ffi.new('float *',HEIGHT),rl.SHADER_UNIFORM_FLOAT)
@@ -206,10 +206,12 @@ def main():
         camera_distance = distance
         if dog_focus:
             target = rl.Vector3(dog.actor.x,.38,dog.actor.z)
-            view_yaw = dog.actor.yaw+1.05
-            camera_distance = 1.8
+            view_yaw = dog.actor.yaw+1.35+1.4*(recording.time/recording.duration)
+            camera_distance = 1.6
         offset = rl.Vector3(-math.sin(view_yaw)*math.cos(pitch)*camera_distance,
                             .45+math.sin(pitch)*camera_distance, -math.cos(view_yaw)*math.cos(pitch)*camera_distance)
+        if dog_focus:
+            offset.y = .27
         length = math.sqrt(offset.x**2+offset.y**2+offset.z**2)
         direction = rl.Vector3(offset.x/length, offset.y/length, offset.z/length)
         safe = length
@@ -242,7 +244,7 @@ def main():
         water.draw_environment()
         rl.draw_model_ex(character,rl.Vector3(player.x,0,player.z),rl.Vector3(0,1,0),
                          math.degrees(player.yaw),rl.Vector3(1,1,1),rl.WHITE)
-        dog.draw()
+        dog.draw(camera,reflection=True)
         water.end_reflection()
         rl.set_shader_value(shader,reflection_location,ffi.new('int *',0),rl.SHADER_UNIFORM_INT)
         rl.begin_drawing()
@@ -251,7 +253,7 @@ def main():
         water.draw_environment()
         rl.draw_model_ex(character, rl.Vector3(player.x, 0, player.z), rl.Vector3(0, 1, 0),
                          math.degrees(player.yaw), rl.Vector3(1, 1, 1), rl.WHITE)
-        dog.draw()
+        dog.draw(camera)
         water.draw(camera,recording.time if recording else rl.get_time())
         # Depth-test against the street, but do not let transparent puffs occlude
         # each other. Back-to-front sorting gives stable alpha compositing.

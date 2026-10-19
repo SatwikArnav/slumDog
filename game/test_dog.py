@@ -66,6 +66,8 @@ class StreetDogChecks(unittest.TestCase):
             coat = next(m for m in gltf['materials'] if m['name']=='Short fawn coat with white bib')
             texture = gltf['textures'][coat['pbrMetallicRoughness']['baseColorTexture']['index']]
             self.assertIn('bufferView',gltf['images'][texture['source']], 'Coat must ship inside the GLB')
+            normal = gltf['textures'][coat['normalTexture']['index']]
+            self.assertIn('bufferView',gltf['images'][normal['source']], 'Hair relief must ship inside the GLB')
             self.assertEqual(len(gltf['animations']),1)
             counts.append(len(gltf['skins'][0]['joints']))
             targets = {gltf['nodes'][c['target']['node']]['name'] for c in gltf['animations'][0]['channels']}
@@ -83,6 +85,13 @@ class StreetDogChecks(unittest.TestCase):
                     self.assertGreater(max(math.dist(v,values[0]) for v in values),.03,bone+' did not animate')
                     self.assertLess(math.dist(values[0],values[-1]),.001,bone+' has a loop discontinuity')
         self.assertEqual(len(set(counts)),1)
+
+    def test_authored_paws_follow_grounded_ik_targets(self):
+        report = json.loads((ASSETS/'dog_validation.json').read_text())
+        self.assertEqual(set(report),{'idle','walk','bark'})
+        for mode,measurement in report.items():
+            self.assertGreaterEqual(measurement['sampled_frames'],25)
+            self.assertLess(measurement['maximum_ankle_target_error_m'],.015,mode)
 
 
 if __name__=='__main__':

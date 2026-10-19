@@ -4,12 +4,18 @@ import math
 import pyray as rl
 from raylib import ffi
 from dog_ai import StreetDog
+from dog_surface import ContactShadow, FRAGMENT
 
 
 class Dog:
-    def __init__(self,assets,config,shader,audio=True):
+    def __init__(self,assets,config,vertex_shader,audio=True):
         self.assets = Path(assets)
         self.actor = StreetDog(config['dog_obstacles'])
+        self.idle_time = 0.
+        self.shader = rl.load_shader_from_memory(vertex_shader,FRAGMENT)
+        self.eye_location = rl.get_shader_location(self.shader,'eyePosition')
+        self.reflection_location = rl.get_shader_location(self.shader,'reflectionPass')
+        self.shadow = ContactShadow()
         self.model = rl.load_model(str(self.assets/'dog.glb'))
         self.clips = {}
         for name,file in [('idle','dog.glb'),('walk','dog_walk.glb'),('bark','dog_bark.glb')]:
@@ -20,12 +26,13 @@ class Dog:
             self.clips[name] = clips,count[0]
         filtered = set()
         for i in range(self.model.materialCount):
-            self.model.materials[i].shader = shader
-            surface = self.model.materials[i].maps[rl.MATERIAL_MAP_ALBEDO]
-            if surface.texture.id not in filtered and surface.texture.width > 1:
-                rl.gen_texture_mipmaps(ffi.addressof(surface,'texture'))
-                rl.set_texture_filter(surface.texture,rl.TEXTURE_FILTER_TRILINEAR)
-                filtered.add(surface.texture.id)
+            self.model.materials[i].shader = self.shader
+            for channel in (rl.MATERIAL_MAP_ALBEDO,rl.MATERIAL_MAP_NORMAL):
+                surface = self.model.materials[i].maps[channel]
+                if surface.texture.id not in filtered and surface.texture.width > 1:
+                    rl.gen_texture_mipmaps(ffi.addressof(surface,'texture'))
+                    rl.set_texture_filter(surface.texture,rl.TEXTURE_FILTER_TRILINEAR)
+                    filtered.add(surface.texture.id)
         self.audio = False
         self.sound = None
         if audio:
@@ -39,6 +46,7 @@ class Dog:
                 print('DOG_AUDIO_UNAVAILABLE: no playback device; roaming and barking animation remain active',flush=True)
 
     def update(self,dt,player):
+        self.idle_time += dt
         event = self.actor.update(dt,(player.x,player.z))
         a = self.actor
         base = self.clips['bark' if a.mode=='bark' else 'idle'][0][0]
@@ -47,7 +55,7 @@ class Dog:
         elif a.mode=='sniff':
             fraction = min(.999,a.age/a.wait)
         else:
-            fraction = 0
+            fraction = .065+.045*math.sin(self.idle_time*1.4)
         walk = self.clips['walk'][0][0]
         rl.update_model_animation_ex(self.model,base,fraction*(base.keyframeCount-1),
                                      walk,a.phase*(walk.keyframeCount-1),a.walk_weight)
@@ -72,8 +80,14 @@ class Dog:
                 rl.play_sound(self.sound)
         return volume,pan
 
-    def draw(self):
+    def draw(self,camera,reflection=False):
         a = self.actor
+        rl.set_shader_value(self.shader,self.eye_location,
+                            ffi.new('float[]',[camera.position.x,camera.position.y,camera.position.z]),
+                            rl.SHADER_UNIFORM_VEC3)
+        rl.set_shader_value(self.shader,self.reflection_location,ffi.new('int *',int(reflection)),rl.SHADER_UNIFORM_INT)
+        if not reflection:
+            self.shadow.draw(a.x,a.z,a.yaw)
         rl.draw_model_ex(self.model,rl.Vector3(a.x,0,a.z),rl.Vector3(0,1,0),
                          math.degrees(a.yaw),rl.Vector3(1,1,1),rl.WHITE)
 
@@ -85,3 +99,5 @@ class Dog:
         for clips,count in self.clips.values():
             rl.unload_model_animations(clips,count)
         rl.unload_model(self.model)
+        self.shadow.close()
+        rl.unload_shader(self.shader)

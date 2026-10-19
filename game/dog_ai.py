@@ -144,7 +144,7 @@ class StreetDog:
                     else:
                         self.mode,self.age,self.wait,self.path = 'idle',0.,.6,[]
                         self.speed = 0
-        self.phase = (self.phase+moved/.48)%1
+        self.phase = (self.phase+moved/.38)%1
         weight = min(1,moved/(.65*dt)) if dt else 0
         self.walk_weight += (weight-self.walk_weight)*(1-math.exp(-12*dt))
         return event
